@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#556" />
+    </marker>
+    <marker id="arrowDashed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a6d00" />
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="480" fill="#ffffff" />
+
+  <text x="600" y="34" text-anchor="middle" font-size="21" font-weight="700" fill="#1a1a1a">Arquitetura das ferramentas propostas</text>
+  <text x="600" y="56" text-anchor="middle" font-size="12.5" fill="#666">Ingestão (Lambda) → armazenamento em camadas (S3) → consulta (Athena) → painel (Metabase)</text>
+
+  <!-- Fontes -->
+  <rect x="40" y="235" width="180" height="90" rx="8" fill="#eef4f8" stroke="#5b7c99" stroke-width="1.5" />
+  <text x="130" y="257" text-anchor="middle" font-size="13" font-weight="700" fill="#2c4a5e">FONTES DE DADOS</text>
+  <text x="130" y="277" text-anchor="middle" font-size="11" fill="#33546b">SPTrans (API + GTFS)</text>
+  <text x="130" y="293" text-anchor="middle" font-size="11" fill="#33546b">Data.Rio (API + GTFS)</text>
+  <text x="130" y="309" text-anchor="middle" font-size="11" fill="#33546b">ETUFOR (API)</text>
+
+  <!-- EventBridge -->
+  <rect x="300" y="140" width="160" height="70" rx="8" fill="#fdf3d8" stroke="#b8860b" stroke-width="1.5" />
+  <text x="380" y="163" text-anchor="middle" font-size="12" font-weight="700" fill="#7a5c00">EVENTBRIDGE SCHEDULER</text>
+  <text x="380" y="180" text-anchor="middle" font-size="10.5" fill="#7a5c00">cron: posição 30 em 30 min</text>
+  <text x="380" y="194" text-anchor="middle" font-size="10.5" fill="#7a5c00">cron: cadastro 1x/dia</text>
+
+  <!-- Lambda -->
+  <rect x="300" y="235" width="160" height="90" rx="8" fill="#fff2df" stroke="#d97706" stroke-width="1.5" />
+  <text x="380" y="270" text-anchor="middle" font-size="14" font-weight="700" fill="#8a4a06">AWS LAMBDA</text>
+  <text x="380" y="288" text-anchor="middle" font-size="10.5" fill="#8a4a06">coleta + padronização</text>
+  <text x="380" y="302" text-anchor="middle" font-size="10.5" fill="#8a4a06">(1 função por praça/cadência)</text>
+
+  <!-- SSM -->
+  <rect x="300" y="350" width="160" height="70" rx="8" fill="#f1ebfb" stroke="#6b46c1" stroke-width="1.5" />
+  <text x="380" y="373" text-anchor="middle" font-size="12" font-weight="700" fill="#4c2d92">SSM PARAMETER STORE</text>
+  <text x="380" y="390" text-anchor="middle" font-size="10.5" fill="#4c2d92">token SPTrans (segredo)</text>
+
+  <!-- S3 medallion -->
+  <rect x="540" y="170" width="200" height="220" rx="8" fill="#fbfbfb" stroke="#555" stroke-width="1.5" />
+  <text x="640" y="192" text-anchor="middle" font-size="13" font-weight="700" fill="#333">AMAZON S3</text>
+
+  <rect x="552" y="202" width="176" height="60" rx="5" fill="#f4e3d3" stroke="#b8794a" stroke-width="1.2" />
+  <text x="640" y="226" text-anchor="middle" font-size="11.5" font-weight="700" fill="#7a4a26">BRONZE</text>
+  <text x="640" y="242" text-anchor="middle" font-size="10" fill="#7a4a26">bruto — resposta original</text>
+
+  <rect x="552" y="266" width="176" height="60" rx="5" fill="#eeeeee" stroke="#999999" stroke-width="1.2" />
+  <text x="640" y="290" text-anchor="middle" font-size="11.5" font-weight="700" fill="#555555">SILVER</text>
+  <text x="640" y="306" text-anchor="middle" font-size="10" fill="#555555">padronizado — schema comum</text>
+
+  <rect x="552" y="330" width="176" height="52" rx="5" fill="#fbf0c9" stroke="#b8952f" stroke-width="1.2" />
+  <text x="640" y="352" text-anchor="middle" font-size="11.5" font-weight="700" fill="#7a611c">GOLD</text>
+  <text x="640" y="368" text-anchor="middle" font-size="10" fill="#7a611c">enriquecido — pronto p/ consumo</text>
+
+  <line x1="640" y1="262" x2="640" y2="266" stroke="#888" stroke-width="1.5" />
+  <line x1="640" y1="326" x2="640" y2="330" stroke="#888" stroke-width="1.5" />
+
+  <!-- Athena -->
+  <rect x="820" y="235" width="140" height="90" rx="8" fill="#f0e9fd" stroke="#7c3aed" stroke-width="1.5" />
+  <text x="890" y="270" text-anchor="middle" font-size="14" font-weight="700" fill="#5b21b6">ATHENA</text>
+  <text x="890" y="288" text-anchor="middle" font-size="10.5" fill="#5b21b6">consulta SQL</text>
+  <text x="890" y="302" text-anchor="middle" font-size="10.5" fill="#5b21b6">direto sobre o S3</text>
+
+  <!-- Metabase -->
+  <rect x="1000" y="235" width="160" height="90" rx="8" fill="#e8f0fe" stroke="#2563eb" stroke-width="1.5" />
+  <text x="1080" y="266" text-anchor="middle" font-size="14" font-weight="700" fill="#1d4ed8">METABASE</text>
+  <text x="1080" y="284" text-anchor="middle" font-size="10.5" fill="#1d4ed8">self-hosted</text>
+  <text x="1080" y="298" text-anchor="middle" font-size="10.5" fill="#1d4ed8">painel do marketing</text>
+  <text x="1080" y="312" text-anchor="middle" font-size="10.5" fill="#1d4ed8">(container sempre ligado)</text>
+
+  <!-- Fluxo principal (solido) -->
+  <line x1="220" y1="280" x2="298" y2="280" stroke="#556" stroke-width="1.8" marker-end="url(#arrow)" />
+  <line x1="460" y1="280" x2="538" y2="280" stroke="#556" stroke-width="1.8" marker-end="url(#arrow)" />
+  <line x1="740" y1="280" x2="818" y2="280" stroke="#556" stroke-width="1.8" marker-end="url(#arrow)" />
+  <line x1="960" y1="280" x2="998" y2="280" stroke="#556" stroke-width="1.8" marker-end="url(#arrow)" />
+
+  <!-- Gatilho/credencial (tracejado) -->
+  <line x1="380" y1="210" x2="380" y2="233" stroke="#b8860b" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#arrowDashed)" />
+  <line x1="380" y1="350" x2="380" y2="327" stroke="#6b46c1" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#arrowDashed)" />
+
+  <!-- Legenda -->
+  <line x1="40" y1="440" x2="75" y2="440" stroke="#556" stroke-width="1.8" marker-end="url(#arrow)" />
+  <text x="82" y="444" font-size="11" fill="#444">fluxo de dado</text>
+  <line x1="220" y1="440" x2="255" y2="440" stroke="#8a6d00" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#arrowDashed)" />
+  <text x="262" y="444" font-size="11" fill="#444">gatilho / credencial</text>
+</svg>

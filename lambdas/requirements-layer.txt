@@ -1,0 +1,8 @@
+# So o que precisa ir dentro da imagem de container publicada no ECR
+# (infra/docker/Dockerfile) -- diferente de lambdas/requirements.txt (usado
+# em dev local), sem boto3 (o runtime da Lambda ja traz) nem python-dotenv
+# (nao existe .env em producao).
+requests>=2.32.0
+pydantic>=2.7.0
+tenacity>=8.3.0
+aws-lambda-powertools>=2.40.0

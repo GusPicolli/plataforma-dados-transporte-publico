@@ -1,0 +1,6 @@
+# Copie para terraform.tfvars (gitignored) e preencha. NUNCA commite o
+# terraform.tfvars de verdade -- ele carrega o token da SPTrans.
+aws_region    = "us-east-1"
+project_name  = "onibus-tempo-real"
+ambiente      = "dev"
+sptrans_token = "coloque-seu-token-aqui"

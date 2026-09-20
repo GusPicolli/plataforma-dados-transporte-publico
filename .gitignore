@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.cache/
+output/
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars
+infra/terraform/*.auto.tfvars
+infra/terraform/crash.log
+# .terraform.lock.hcl NAO entra aqui -- o proprio terraform recomenda commitar
