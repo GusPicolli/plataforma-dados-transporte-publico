@@ -40,7 +40,8 @@ resource "aws_scheduler_schedule" "funcoes" {
     mode = "OFF"
   }
 
-  schedule_expression = each.value.agenda
+  schedule_expression          = each.value.agenda
+  schedule_expression_timezone = var.timezone_agendamento
 
   target {
     arn      = aws_lambda_function.funcoes[each.key].arn

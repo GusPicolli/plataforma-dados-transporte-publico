@@ -16,6 +16,136 @@ linha) e gera até três tabelas CSV em `output/<cidade>/`:
 | Rio de Janeiro | `src/rio_pipeline.py`     | ✅ | ✅ | ✅ |
 | Fortaleza  | `src/fortaleza_pipeline.py`   | ✅ | ❌ (não existe API pública) | ✅ |
 
+## Começando
+
+Três comandos, do zero até uma coleta de verdade. O caminho básico **não
+precisa de token, conta AWS nem Docker**:
+
+```bash
+make setup    # cria o venv, instala as dependencias e o .env
+make check    # diz o que ja funciona e o que falta configurar
+make demo     # coleta o Rio inteiro de verdade (~7s) -> output/rio/
+```
+
+`make` sozinho lista todos os comandos disponíveis.
+
+O `make demo` é proposital: o Rio é a única praça que entrega linhas,
+posições e pontos sem nenhuma credencial — dá pra ver o projeto funcionando
+antes de configurar qualquer coisa.
+
+### O que precisa de quê
+
+| Pra rodar | Precisa de |
+|---|---|
+| `make demo`, `run-rio`, `run-fortaleza` | nada além do `make setup` |
+| `make run-sptrans` | `SPTRANS_TOKEN` no `.env` ([cadastro gratuito](https://www.sptrans.com.br/desenvolvedores/)) |
+| `make realtime-*` (exercício de tempo real) | Docker rodando (é onde sobe o Redis) |
+| `make docker-build` / `docker-run` (Lambdas) | Docker rodando |
+| `infra/terraform/` | credencial AWS (`aws configure`) |
+
+`make check` responde essa tabela olhando a **sua** máquina: lista o que já
+dá pra executar agora e, pro que não dá, o motivo e o comando que resolve —
+em vez de você descobrir lendo código ou pelo traceback.
+
+### Sem `make` na máquina
+
+O Makefile é conveniência, não dependência. O equivalente na mão:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate             # Windows;  source .venv/bin/activate no Linux/Mac
+pip install -r requirements.txt -r lambdas/requirements.txt
+copy .env.example .env             # cp no Linux/Mac
+python scripts/check_ambiente.py   # = make check
+python main.py rio                 # = make demo
+```
+
+## Estado atual do projeto
+
+Última atualização: 21/09/2026.
+
+O projeto tem **três camadas independentes**, e dá para mexer em qualquer uma
+sem tocar nas outras:
+
+| Camada | O que é | Precisa de |
+|---|---|---|
+| **Pipelines em lote** (`src/`, `main.py`) | Coleta as 3 praças e gera CSV local | nada (Rio/Fortaleza) ou token (SP) |
+| **Ingestão em produção** (`lambdas/`, `infra/`) | A mesma coleta rodando na AWS, bronze → silver | conta AWS + Docker |
+| **Exercício de tempo real** (`exercicios/`) | Producer/consumer com Redis, para estudo | Docker |
+
+**Para só ver o projeto funcionando, use a primeira.** `make demo` roda em ~7s
+e não pede credencial nenhuma. As outras duas são opcionais.
+
+### O que funciona hoje
+
+| Item | Estado |
+|---|---|
+| Coleta local das 3 praças | funciona |
+| Ingestão na AWS (bronze) | funciona, agendada |
+| Normalização bronze → silver (Parquet) | funciona, automática por evento do S3 |
+| Validação de schema, retry, log estruturado | funciona |
+| Alarmes e painel no CloudWatch | funciona (15 alarmes) |
+| Exercício de tempo real (local) | funciona |
+| `rio_cadastro` (linhas e pontos do Rio) | **quebrado** — ver abaixo |
+| Camada gold | não existe |
+| Testes automatizados | não existem |
+| CI | não existe |
+
+### A falha conhecida
+
+`rio_cadastro` baixa o GTFS da SMTR hospedado no ArcGIS, que passou a responder
+`403 — You do not have permissions to access this resource`. Foi reproduzido
+fora da AWS, direto de uma máquina local: **não é o código nem permissão IAM**,
+é a origem. As posições do Rio vêm de outra fonte e seguem funcionando, então a
+praça está degradada, não fora do ar.
+
+Consequência prática: `linhas.csv` e `pontos.csv` do Rio não são gerados, e o
+alarme `rio-cadastro-dado-velho` fica aceso de propósito.
+
+### O que este repositório ainda não é
+
+Sendo explícito, para ninguém se surpreender ao abrir:
+
+- **O state do Terraform é local.** Não há backend remoto nem lock. Se outra
+  pessoa for aplicar infraestrutura, combine antes — dois `apply` simultâneos
+  corrompem o state.
+- **Sem testes e sem CI.** Nada valida uma mudança antes do merge.
+- **Dependências não fixadas** (`>=`) e imagem base em tag mutável: um build de
+  hoje não é necessariamente igual ao de amanhã.
+- **Deploy sem versão**: as funções apontam para a tag `latest` num ECR mutável.
+
+Nada disso impede rodar ou testar. Impede tratar como produção de empresa.
+
+## Mapa do repositório
+
+```
+main.py                 CLI dos pipelines em lote (sptrans | rio | fortaleza)
+Makefile                todos os comandos; `make` sozinho lista
+
+src/                    domínio: clientes HTTP, leitura de GTFS, pipelines
+                        reusado pelas Lambdas — a lógica de coleta existe uma vez só
+schemas/                models pydantic (bronze por praça + canônico da silver)
+                        mapeamento_silver.py: metadado declarativo bronze -> canônico
+
+lambdas/
+  common/               validação, retry, log estruturado, escrita S3, leitura SSM
+  sp_posicoes/ ...      5 funções de ingestão (uma por praça × cadência)
+  silver/               normalização genérica, sem `if praca ==`
+  heartbeat/            publica a idade do dado como métrica (alarme confiável)
+
+infra/
+  terraform/            toda a infraestrutura; ver o README de lá
+  docker/               Dockerfile único das 7 funções + scripts de build/run
+
+scripts/
+  check_ambiente.py     `make check` — o que já roda e o que falta configurar
+  status_pipeline.py    `make status` — os pipelines na AWS estão entregando?
+
+exercicios/realtime/    producer/consumer com Redis — estudo, fora de produção
+docs/                   FONTES.md (por fonte) e a proposta inicial
+output/                 CSVs gerados (gitignored)
+```
+
 ## Como a API funciona
 
 1. **Token de acesso**: é necessário se cadastrar gratuitamente em
@@ -58,16 +188,6 @@ linha) e gera até três tabelas CSV em `output/<cidade>/`:
    sentido (`route_short_name`, ex: `"1012-10"`) — o mesmo formato do campo
    `letreiro` em `posicoes.csv`. **Não é** o `codigo_linha` (`cl`) numérico
    usado em `linhas.csv`; esse código não existe no GTFS.
-
-## Configuração
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate      # Windows
-pip install -r requirements.txt
-copy .env.example .env
-# edite .env e coloque seu token em SPTRANS_TOKEN
-```
 
 ## Uso
 
@@ -257,33 +377,71 @@ curl http://127.0.0.1:8000/posicoes/rio/B31066       # uma posicao especifica no
 ## Ingestão em produção (`lambdas/` + `infra/terraform/`)
 
 Implementação da arquitetura da
-[Proposta_inicial_Mapeamento_rotas_onibus.md](docs/Proposta_inicial_Mapeamento_rotas_onibus.md):
-5 funções Lambda (uma por praça × cadência), disparadas pelo EventBridge
-Scheduler, escrevendo na camada bronze de um bucket S3 — com validação de
-schema, retry e logs estruturados. Detalhes:
+[Proposta_inicial_Mapeamento_rotas_onibus.md](docs/Proposta_inicial_Mapeamento_rotas_onibus.md).
+São **7 funções Lambda**, todas na mesma imagem de container:
 
-- **Por fonte** (formato, frequência, particularidade, schema, retry, onde
-  cai no S3): [`docs/FONTES.md`](docs/FONTES.md).
-- **Deploy** (pré-requisitos, o que é criado, o que já foi validado e o
-  que ainda não): [`infra/terraform/README.md`](infra/terraform/README.md).
-- **Código**: `schemas/` (models `pydantic`, um por entidade/praça),
-  `lambdas/common/` (validação, retry, log estruturado, escrita em S3),
-  `lambdas/<funcao>/handler.py` (um por função — reusam `src/`, não
-  duplicam a lógica de coleta dos pipelines em lote).
+| Função | Dispara por | O que faz |
+|---|---|---|
+| `sp_posicoes`, `rio_posicoes` | EventBridge, 1 min em janela | posição dos veículos → bronze |
+| `sp_cadastro`, `rio_cadastro`, `fortaleza_cadastro` | EventBridge, diário 7h | linhas e pontos → bronze |
+| `silver` | **evento do S3** | bronze → Parquet no schema canônico |
+| `heartbeat` | EventBridge, 1 hora | publica a idade do dado como métrica |
 
-Duas listas de dependências separadas em `lambdas/`, de propósito:
-`requirements.txt` é pra rodar/testar os handlers localmente (inclui
-`boto3` e `python-dotenv`); `requirements-layer.txt` é só o que vai
-**dentro da imagem de container** (sem `boto3`, que o runtime já traz; sem
-`python-dotenv`, que não faz sentido em produção).
+### Como o dado anda
 
-**Empacotamento: imagem de container (Docker), não zip+layer.** As 5
-funções compartilham a mesma imagem (`infra/docker/Dockerfile`), publicada
-no ECR — só o `command` (o handler) muda entre elas, via `image_config` no
-Terraform. Rodar dentro da imagem base oficial da AWS já resolve sozinho o
-problema de baixar o wheel pra plataforma errada (que apareceu de verdade
-quando isso ainda era zip+layer buildado num Windows). Pra testar uma
-função localmente, sem precisar publicar nada:
+```
+EventBridge → Lambda de ingestão → S3 bronze (NDJSON, como veio da origem)
+                                        │
+                                   evento do S3
+                                        ↓
+                                  Lambda silver → S3 silver (Parquet, canônico)
+```
+
+**Não há orquestrador.** A silver reage ao evento de criação do objeto, então a
+ingestão não precisa saber que ela existe. Os dois filtros do evento — prefixo
+`bronze/` e sufixo `.ndjson` — são o que impede o Parquet da silver de disparar
+a própria silver num laço infinito.
+
+Efeito medido da silver: o Parquet com schema tipado reduz **78% a 96%** em
+relação ao NDJSON (os pontos de SP vão de 30,5 MB para 1,4 MB).
+
+### A silver é genérica
+
+Não existe um `if praca == ...` no handler. Ele lê
+[`schemas/mapeamento_silver.py`](schemas/mapeamento_silver.py), um metadado
+declarativo que diz, para cada par (praça, entidade), qual model canônico usar e
+de que campo do bronze vem cada campo canônico. Fonte nova ou campo renomeado na
+origem se resolve ali, sem tocar em código.
+
+O metadado mora no repositório de propósito — não há banco de metadados nesta
+fase.
+
+### Observabilidade
+
+15 alarmes cobrindo três classes de falha que exigem detecções diferentes: a
+função quebrou (`Errors`), a função nem rodou (idade do dado), e a função rodou
+sem erro mas o dado veio ruim (métrica extraída do log JSON). Mais um painel no
+CloudWatch e um tópico SNS.
+
+Para saber se está tudo entregando, sem abrir o console:
+
+```bash
+make status
+```
+
+Detalhes — inclusive por que o "não executou" precisou de uma Lambda de
+heartbeat em vez de um alarme sobre `Invocations` — em
+[`infra/terraform/README.md`](infra/terraform/README.md).
+
+### Empacotamento: imagem de container, não zip+layer
+
+As 7 funções compartilham a **mesma imagem** (`infra/docker/Dockerfile`),
+publicada no ECR — só o `command` (o handler) muda entre elas, via
+`image_config` no Terraform. Rodar dentro da imagem base oficial da AWS já
+resolve sozinho o problema de baixar o wheel para a plataforma errada, que
+apareceu de verdade quando isso ainda era zip+layer buildado num Windows.
+
+Para testar uma função localmente, sem publicar nada:
 
 ```bash
 infra/docker/run_local.sh lambdas.rio_posicoes.handler.lambda_handler
@@ -291,6 +449,20 @@ infra/docker/run_local.sh lambdas.rio_posicoes.handler.lambda_handler
 curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
 ```
 
-Isso usa o Lambda Runtime Interface Emulator, que já vem embutido na
-imagem base — não precisa de `aws-sam-cli` nem de nenhuma ferramenta além
-do Docker.
+Usa o Lambda Runtime Interface Emulator, que já vem embutido na imagem base —
+não precisa de `aws-sam-cli` nem de nada além do Docker.
+
+### Duas listas de dependências, de propósito
+
+`lambdas/requirements.txt` é para rodar e testar os handlers localmente (inclui
+`boto3` e `python-dotenv`). `lambdas/requirements-layer.txt` é só o que vai
+**dentro da imagem** — sem `boto3`, que o runtime da Lambda já traz, e sem
+`python-dotenv`, que não faz sentido em produção.
+
+### Onde está o resto
+
+- **Por fonte** (formato, frequência real de atualização, particularidades e
+  armadilhas): [`docs/FONTES.md`](docs/FONTES.md)
+- **Deploy, ligar, verificar, observabilidade e custo**:
+  [`infra/terraform/README.md`](infra/terraform/README.md)
+

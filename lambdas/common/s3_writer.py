@@ -30,7 +30,16 @@ def escrever_bronze(praca, entidade, registros, momento=None):
         f"dt={momento:%Y-%m-%d}/hh={momento:%H}/"
         f"{momento:%Y%m%dT%H%M%SZ}.ndjson"
     )
-    corpo = "\n".join(json.dumps(registro, ensure_ascii=False) for registro in registros).encode("utf-8")
+
+    # Carimba aqui, e nao no handler, porque validar_lote usa model_dump() do
+    # pydantic -- que devolve so os campos declarados no model da fonte e
+    # descartaria qualquer coisa adicionada antes. Sem isso o bronze perde o
+    # horario de coleta (so restaria o que esta na propria chave do S3).
+    coletado_em = momento.isoformat()
+    corpo = "\n".join(
+        json.dumps({**registro, "coletado_em": coletado_em}, ensure_ascii=False)
+        for registro in registros
+    ).encode("utf-8")
 
     _cliente_s3().put_object(Bucket=BUCKET_NAME, Key=key, Body=corpo, ContentType="application/x-ndjson")
     return key

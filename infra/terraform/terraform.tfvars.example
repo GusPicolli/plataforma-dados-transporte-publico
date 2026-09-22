@@ -4,3 +4,8 @@ aws_region    = "us-east-1"
 project_name  = "onibus-tempo-real"
 ambiente      = "dev"
 sptrans_token = "coloque-seu-token-aqui"
+
+# E-mail que recebe os alarmes. Vazio cria os alarmes sem notificacao.
+# Ao preencher, confirme o e-mail que a AWS envia -- sem o clique no link a
+# inscricao fica pendente e nao entrega nada.
+email_alertas = ""
