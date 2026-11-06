@@ -18,7 +18,25 @@ class _Canonico(BaseModel):
     coletado_em: Optional[str] = None
 
 
-class PosicaoCanonica(_Canonico):
+class _ComGeo(BaseModel):
+    """Indice espacial H3, preenchido pela silver quando ha coordenada.
+
+    H3 e uma grade hexagonal hierarquica da Uber. Duas razoes pra usar aqui
+    em vez de so lat/lon: agrupar por regiao vira GROUP BY (sem shapefile de
+    bairro), e celulas vizinhas tem distancia uniforme -- diferente de grade
+    retangular, onde vizinho na diagonal fica mais longe que na horizontal.
+
+    Resolucao 8 (~0,74 km2) e resolucao 9 (~0,11 km2): a primeira da
+    agregacao de bairro, a segunda de quarteirao. Guardar as duas custa dois
+    campos de texto e evita recalcular, que no Athena nao da -- ele nao tem
+    funcao H3 nativa.
+    """
+
+    h3_r8: Optional[str] = None
+    h3_r9: Optional[str] = None
+
+
+class PosicaoCanonica(_Canonico, _ComGeo):
     id_veiculo: str
     id_linha: Optional[str] = None
     codigo_publico: Optional[str] = None
@@ -36,7 +54,7 @@ class LinhaCanonica(_Canonico):
     destino: Optional[str] = None
 
 
-class PontoCanonico(_Canonico):
+class PontoCanonico(_Canonico, _ComGeo):
     id_ponto: str
     id_linha: Optional[str] = None
     codigo_publico: Optional[str] = None

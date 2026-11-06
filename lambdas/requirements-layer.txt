@@ -7,3 +7,4 @@ pydantic>=2.7.0
 tenacity>=8.3.0
 aws-lambda-powertools>=2.40.0
 pyarrow>=16.0.0
+h3>=4.0.0

@@ -1,0 +1,25 @@
+name: onibus
+version: "1.0.0"
+profile: onibus
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  onibus:
+    +materialized: view
+    marts:
+      # Dimensoes como view: sao pequenas e mudam pouco, materializar nao
+      # compra tempo nem custo no volume atual -- so adiciona um passo a
+      # manter. Ver docs/CONSULTAS.md, "Por que views e nao tabelas".
+      +materialized: view
+      fato_posicoes:
+        # ESTA materializa. O calculo geoespacial (distancia de cada veiculo
+        # ate a parada mais proxima da sua linha) e uma juncao com agregacao
+        # que nao vale repetir a cada consulta.
+        +materialized: table
+      dim_data:
+        # Gerada, nao derivada de fonte -- nao faz sentido recalcular sempre.
+        +materialized: table

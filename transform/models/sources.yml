@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Camada silver: as 3 praças já no schema canônico, mas ainda append-only
+      (cada coleta regrava o cadastro inteiro) e sem as correções de fuso e
+      chave. Particionada por praca, entidade, dt e hh.
+    database: awsdatacatalog
+    schema: "{{ env_var('DBT_SCHEMA_SILVER') }}"
+    tables:
+      - name: posicoes
+        description: Um veículo num instante. Grão correto — não deduplicar.
+      - name: linhas
+        description: Cadastro de linhas, refotografado a cada coleta.
+      - name: pontos
+        description: Par (linha, parada), refotografado a cada coleta.
