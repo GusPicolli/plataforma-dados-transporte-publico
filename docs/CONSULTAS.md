@@ -244,7 +244,12 @@ $bin = "$env:LOCALAPPDATA\session-manager-pluginin"
   ([Environment]::GetEnvironmentVariable('Path','User').TrimEnd(';') + ';' + $bin), 'User')
 ```
 
-Abra um terminal novo e confirme com `session-manager-plugin --version`.
+O `make metabase-aws-tunel` já procura o plugin nesse diretório, então ele
+funciona **sem reiniciar nada**. Para usar o `aws ssm` direto na mão, aí sim
+a alteração do PATH precisa valer no terminal: no Windows ela só vale para
+processos iniciados *depois* — e no VS Code abrir uma aba nova não basta,
+porque a aba herda o ambiente do processo do editor, que subiu antes. Feche
+o VS Code inteiro, ou use um PowerShell fora dele.
 
 ## Em SQL nativo, qualifique o schema
 

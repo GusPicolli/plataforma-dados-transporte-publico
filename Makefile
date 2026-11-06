@@ -236,8 +236,36 @@ metabase-aws-ligar:  ## Liga a instancia do Metabase na AWS
 	@echo ""
 	@echo "Sem tunel configurado ainda? Veja docs/CONSULTAS.md."
 
+# O AWS CLI procura o session-manager-plugin SO no PATH, e falha com
+# "SessionManagerPlugin is not found" sem dizer onde procurou.
+#
+# Instalado pelo zip (o caminho sem privilegio de administrador), ele fica
+# num diretorio que so entra no PATH depois de reabrir a sessao do Windows
+# inteira -- no VS Code, abrir uma aba nova NAO basta, porque a aba herda o
+# ambiente do processo que ja estava rodando. Procurar nos lugares conhecidos
+# e acrescentar na hora evita esse "reinicie e tente de novo".
+CAMINHOS_SMP := $$HOME/AppData/Local/session-manager-plugin/bin \
+                /c/Program\ Files/Amazon/SessionManagerPlugin/bin \
+                /usr/local/sessionmanagerplugin/bin
+
 metabase-aws-tunel:  ## Abre o Metabase em http://localhost:3000 por um tunel SSM
-	@ID=$$(aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=onibus-tempo-real-metabase" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text); test "$$ID" != "None" || (echo "A instancia nao esta ligada. Rode: make metabase-aws-ligar" && exit 1); echo ""; echo "Tunel aberto. Acesse:  http://localhost:3000"; echo "Deixe este terminal aberto; Ctrl+C fecha o tunel."; echo ""; aws ssm start-session --region us-east-1 --target "$$ID" --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+	@command -v session-manager-plugin >/dev/null 2>&1 || { \
+	  for d in $(CAMINHOS_SMP); do \
+	    if [ -x "$$d/session-manager-plugin" ] || [ -x "$$d/session-manager-plugin.exe" ]; then \
+	      PATH="$$d:$$PATH"; export PATH; break; \
+	    fi; \
+	  done; \
+	}; \
+	command -v session-manager-plugin >/dev/null 2>&1 || { \
+	  echo "session-manager-plugin nao encontrado."; \
+	  echo "Instale conforme docs/CONSULTAS.md > Instalando o session-manager-plugin."; \
+	  exit 1; \
+	}; \
+	ID=$$(aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=onibus-tempo-real-metabase" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text); \
+	test "$$ID" != "None" || { echo "A instancia nao esta ligada. Rode: make metabase-aws-ligar"; exit 1; }; \
+	echo ""; echo "Tunel aberto. Acesse:  http://localhost:3000"; \
+	echo "Deixe este terminal aberto; Ctrl+C fecha o tunel."; echo ""; \
+	aws ssm start-session --region us-east-1 --target "$$ID" --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
 
 metabase-aws-desligar:  ## Desliga a instancia (para de cobrar; dashboards ficam)
 	@$(TF) plan -input=false -out=mb.tfplan -var 'metabase_ligado=false'
