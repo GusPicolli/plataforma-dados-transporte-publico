@@ -194,7 +194,19 @@ resource "aws_instance" "metabase" {
   # instancia -- e isso apaga os dashboards junto, porque eles moram no
   # disco raiz. Por isso NAO ha "user_data_replace_on_change".
   lifecycle {
-    ignore_changes = [ami]
+    ignore_changes = [
+      ami,
+
+      # SEM ISTO, TODO PLAN COM A INSTANCIA PARADA QUER RECRIA-LA.
+      #
+      # A AWS devolve o IP auto-atribuido quando a instancia para, e o
+      # atributo passa a ler "false". O Terraform ve "false -> true" e marca
+      # como "forces replacement" -- o que destruiria o disco raiz e, com
+      # ele, todos os dashboards.
+      #
+      # Achado rodando destroy + apply e dando plan com a maquina parada.
+      associate_public_ip_address,
+    ]
   }
 
   tags = {
