@@ -1,0 +1,70 @@
+#!/bin/bash
+# Roda UMA vez, na criacao da instancia. Instala um servico que, a cada
+# boot, le versao e token do SSM e sobe os containers -- por isso trocar
+# qualquer um dos dois nao exige recriar a maquina (o que apagaria o disco
+# raiz e, com ele, os dashboards).
+set -euxo pipefail
+
+dnf install -y docker
+systemctl enable --now docker
+mkdir -p /opt/metabase-dados
+
+cat > /usr/local/bin/subir-metabase.sh <<'FIM_SCRIPT'
+#!/bin/bash
+set -uo pipefail
+
+ler_param() {
+  aws ssm get-parameter --region "REGIAO_AWS" --name "$1" --with-decryption \
+      --query Parameter.Value --output text 2>/dev/null || echo ""
+}
+
+VERSAO=$(ler_param "PARAM_VERSAO")
+[ -z "$VERSAO" ] && VERSAO="VERSAO_PADRAO"
+TOKEN=$(ler_param "PARAM_TOKEN")
+
+# ESCUTA SO EM LOCALHOST. O acesso de fora vem pelo tunel, que roda na
+# mesma maquina -- entao a porta nunca precisa ficar exposta na rede.
+# Mesmo que alguem abra a porta 3000 no security group por engano, nao
+# chega em nada.
+docker rm -f metabase 2>/dev/null || true
+docker run -d --name metabase --restart unless-stopped \
+  -p 127.0.0.1:3000:3000 \
+  -v /opt/metabase-dados:/metabase-dados \
+  -e MB_DB_FILE=/metabase-dados/metabase.db \
+  -e JAVA_OPTS="-Xmx1g" \
+  "metabase/metabase:$VERSAO"
+
+# O tunel so sobe se houver token. Sem ele a maquina nao atende ninguem de
+# fora -- estado seguro por padrao, nao por configuracao.
+docker rm -f cloudflared 2>/dev/null || true
+if [ -n "$TOKEN" ] && [ "$TOKEN" != "nao-configurado" ]; then
+  docker run -d --name cloudflared --restart unless-stopped --network host \
+    cloudflare/cloudflared:latest tunnel --no-autoupdate run --token "$TOKEN"
+fi
+FIM_SCRIPT
+
+# Os marcadores sao substituidos aqui, e nao por interpolacao do Terraform
+# dentro do heredoc: "$VERSAO" e "$1" do shell seriam confundidos com
+# sintaxe do HCL e o arquivo fica ilegivel.
+sed -i "s|REGIAO_AWS|${regiao}|g;   s|PARAM_VERSAO|${param_versao}|g; \
+        s|PARAM_TOKEN|${param_token}|g; s|VERSAO_PADRAO|${versao_padrao}|g" \
+    /usr/local/bin/subir-metabase.sh
+chmod +x /usr/local/bin/subir-metabase.sh
+
+cat > /etc/systemd/system/metabase.service <<'FIM_UNIT'
+[Unit]
+Description=Metabase e tunel Cloudflare
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/subir-metabase.sh
+
+[Install]
+WantedBy=multi-user.target
+FIM_UNIT
+
+systemctl daemon-reload
+systemctl enable --now metabase.service

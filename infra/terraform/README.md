@@ -284,7 +284,54 @@ entregou 8.047, 7.657 e 5.049 veículos em coletas reais; Rio, 1.962 e 3.488.
 Pisos em 200 e 50, frouxos de propósito: alarme de volume que grita por
 variação normal vira ruído e para de ser lido.
 
-### Retenção e o custo de coletar de minuto a minuto
+### Segurança
+
+### O que o Terraform protege
+
+| Proteção | Onde |
+|---|---|
+| Bloqueio de acesso público ao S3 **na conta** | `seguranca.tf` |
+| Criptografia de disco por padrão | `seguranca.tf` |
+| Política negando requisição sem TLS nos dois buckets | `seguranca.tf` |
+| CloudTrail multi-região, com validação de integridade | `seguranca.tf` |
+| Orçamento com alerta em US$ 10, 25 e previsão | `seguranca.tf` |
+| Metabase escutando só em `127.0.0.1` | `metabase.tf` |
+| IMDSv2 obrigatório na EC2 | `metabase.tf` |
+| Acesso à instância por Session Manager, sem SSH nem porta | `metabase.tf` |
+| Papel IAM separado por função | cada arquivo |
+
+O bloqueio no nível da **conta** é o de maior retorno: qualquer bucket criado
+depois — por um colega, por um tutorial, por engano — já nasce fechado.
+Vazamento de S3 é a falha mais comum em conta AWS.
+
+### O que só você pode fazer, no console
+
+Duas coisas que o Terraform não alcança, e são as mais importantes que restam:
+
+**1. MFA no usuário IAM.** O `usuario_padrao` tem `AdministratorAccess` e
+**não tem MFA**. Uma chave vazada hoje dá controle total da conta, sem
+segundo fator. IAM → Users → Security credentials → Assign MFA device.
+
+**2. Rotação da chave de acesso.** A chave em uso tem mais de 48 dias e é a
+mesma que está em `~/.aws/credentials` e no Metabase local. Criar uma nova,
+trocar, e desativar a antiga leva dois minutos.
+
+O ideal seria não ter chave de longa duração para um usuário admin — usar
+IAM Identity Center com credencial temporária. Mas isso muda o fluxo de
+trabalho, então fica como recomendação, não como pendência.
+
+### O que ficou de fora, e por quê
+
+**GuardDuty** (~US$ 1–3/mês nesta escala) é o melhor controle de *detecção*
+que falta: identifica credencial usada de local improvável, mineração, acesso
+anômalo ao S3. Não foi habilitado porque custa, e custo é decisão sua.
+
+**A trilha do CloudTrail mora dentro do projeto**, então o `make tf-destroy`
+a apaga junto. Numa conta de verdade ela ficaria em conta separada, fora do
+alcance de quem opera o ambiente. Fica assim para não quebrar o ciclo de
+teste de destroy/apply.
+
+## Retenção e o custo de coletar de minuto a minuto
 
 Medido: cada coleta de posições das duas praças grava **4,15 MB** (2,7 MB de
 SP + 1,1 MB do Rio no bronze, mais 0,3 MB de silver). Na janela de 8h–16h59,

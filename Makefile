@@ -9,7 +9,7 @@ PIP := $(VENV_BIN)/pip
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup check status metabase-aws-ligar metabase-aws-desligar metabase-aws-conexao bootstrap query query-gold dbt-deps dbt-build dbt-test dbt-docs metabase metabase-stop metabase-limpar demo deploy publish refresh \n	tf-init tf-plan tf-apply tf-ligar tf-desligar tf-destroy venv install run run-sptrans run-rio run-fortaleza run-all clean \
+.PHONY: help setup check status metabase-aws-ligar metabase-aws-desligar metabase-aws-conexao metabase-aws-shell metabase-aws-atualizar metabase-aws-logs bootstrap query query-gold dbt-deps dbt-build dbt-test dbt-docs metabase metabase-stop metabase-limpar demo deploy publish refresh \n	tf-init tf-plan tf-apply tf-ligar tf-desligar tf-destroy venv install run run-sptrans run-rio run-fortaleza run-all clean \
 	realtime-redis realtime-producer-sp realtime-producer-rio realtime-consumer realtime-api \
 	docker-build docker-run
 
@@ -197,12 +197,16 @@ tf-destroy:  ## APAGA toda a infraestrutura, inclusive os dados no S3
 # O "ligar" descobre o seu IP publico do momento e libera so ele na porta
 # 3000 -- Metabase aberto pra internet enxerga o data lake inteiro.
 
-metabase-aws-ligar:  ## Liga o Metabase na AWS e libera o seu IP atual
-	@IP=$$(curl -s --max-time 10 https://checkip.amazonaws.com | tr -d '[:space:]'); 	test -n "$$IP" || (echo "Nao consegui descobrir seu IP publico." && exit 1); 	echo "Liberando acesso para $$IP/32"; 	$(TF) plan -input=false -out=mb.tfplan 	  -var 'metabase_ligado=true' -var "metabase_cidr_liberado=$$IP/32"; 	$(TF) apply mb.tfplan; 	rm -f infra/terraform/mb.tfplan
+metabase-aws-ligar:  ## Liga a instancia do Metabase na AWS
+	@$(TF) plan -input=false -out=mb.tfplan -var 'metabase_ligado=true'
+	@$(TF) apply mb.tfplan
+	@rm -f infra/terraform/mb.tfplan
 	@echo ""
-	@$(TF) output -raw metabase_url
+	@echo "Ligada. A primeira subida leva ~3 min (baixa as imagens)."
+	@echo "Acesso: pelo hostname do Cloudflare Tunnel -- a porta 3000 NAO"
+	@echo "e exposta, o Metabase escuta so em localhost dentro da maquina."
 	@echo ""
-	@echo "A primeira subida leva ~3 min (baixa a imagem do Metabase)."
+	@echo "Sem tunel configurado ainda? Veja docs/CONSULTAS.md."
 
 metabase-aws-desligar:  ## Desliga a instancia (para de cobrar; dashboards ficam)
 	@$(TF) plan -input=false -out=mb.tfplan -var 'metabase_ligado=false'
@@ -212,6 +216,15 @@ metabase-aws-desligar:  ## Desliga a instancia (para de cobrar; dashboards ficam
 
 metabase-aws-conexao:  ## Mostra os valores pra conectar o Metabase ao Athena
 	@$(PY) scripts/metabase_aws_conexao.py
+
+metabase-aws-shell:  ## Abre um shell na instancia via SSM (sem SSH, sem porta aberta)
+	@ID=$$(aws ec2 describe-instances --region us-east-1 	  --filters "Name=tag:Name,Values=onibus-tempo-real-metabase" "Name=instance-state-name,Values=running" 	  --query "Reservations[0].Instances[0].InstanceId" --output text); 	test "$$ID" != "None" || (echo "A instancia nao esta ligada. Rode: make metabase-aws-ligar" && exit 1); 	echo "Conectando em $$ID (Ctrl+D pra sair)..."; 	aws ssm start-session --region us-east-1 --target "$$ID"
+
+metabase-aws-atualizar:  ## Aplica a versao configurada do Metabase, sem recriar a maquina
+	@ID=$$(aws ec2 describe-instances --region us-east-1 	  --filters "Name=tag:Name,Values=onibus-tempo-real-metabase" "Name=instance-state-name,Values=running" 	  --query "Reservations[0].Instances[0].InstanceId" --output text); 	test "$$ID" != "None" || (echo "A instancia nao esta ligada." && exit 1); 	echo "Reiniciando os containers com a versao do SSM..."; 	aws ssm send-command --region us-east-1 --instance-ids "$$ID" 	  --document-name AWS-RunShellScript 	  --parameters 'commands=["/usr/local/bin/subir-metabase.sh"]' 	  --query "Command.CommandId" --output text
+
+metabase-aws-logs:  ## Mostra o log do container do Metabase na instancia
+	@ID=$$(aws ec2 describe-instances --region us-east-1 	  --filters "Name=tag:Name,Values=onibus-tempo-real-metabase" "Name=instance-state-name,Values=running" 	  --query "Reservations[0].Instances[0].InstanceId" --output text); 	test "$$ID" != "None" || (echo "A instancia nao esta ligada." && exit 1); 	C=$$(aws ssm send-command --region us-east-1 --instance-ids "$$ID" 	  --document-name AWS-RunShellScript 	  --parameters 'commands=["docker ps -a","docker logs --tail 40 metabase 2>&1"]' 	  --query "Command.CommandId" --output text); 	sleep 6; 	aws ssm get-command-invocation --region us-east-1 --command-id "$$C" --instance-id "$$ID" 	  --query "StandardOutputContent" --output text
 
 # --- Dashboards (Metabase local) ---------------------------------------------
 # Roda na SUA maquina, nao na AWS. O Athena e acessivel de fora, entao nao ha

@@ -33,11 +33,13 @@ resource "aws_security_group" "metabase" {
   description = "Acesso ao Metabase"
   vpc_id      = data.aws_vpc.padrao.id
 
-  # Sem regra de entrada por padrao: a variavel vem vazia, e o
-  # "make metabase-aws-ligar" preenche com o SEU IP do momento.
+  # NENHUMA entrada por padrao, e com o Cloudflare Tunnel nem e preciso
+  # abrir: o container faz uma conexao de SAIDA ate a Cloudflare, e o
+  # trafego chega por ela, com HTTPS de ponta a ponta.
   #
-  # Metabase na porta 3000 aberto pra internet e conta de administrador e
-  # pedido de invasao -- e ele enxerga todo o data lake.
+  # A variavel existe como alternativa pra quem nao usar o tunel. Mas atencao:
+  # o Metabase escuta em 127.0.0.1:3000 dentro da instancia, entao abrir a
+  # porta aqui SOZINHO nao basta -- e proposital, pra nao expor por engano.
   dynamic "ingress" {
     for_each = var.metabase_cidr_liberado == "" ? [] : [var.metabase_cidr_liberado]
 
@@ -83,6 +85,42 @@ resource "aws_iam_role" "metabase" {
 resource "aws_iam_instance_profile" "metabase" {
   name = "${var.project_name}-${var.ambiente}-metabase"
   role = aws_iam_role.metabase.name
+}
+
+# Session Manager: entrar na maquina SEM abrir porta e SEM chave SSH. O
+# acesso passa pela API da AWS, com IAM e registro no CloudTrail -- mais
+# seguro que SSH, e e o unico jeito de diagnosticar a instancia hoje.
+resource "aws_iam_role_policy_attachment" "metabase_ssm" {
+  role       = aws_iam_role.metabase.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy" "metabase_config" {
+  name = "le-configuracao"
+  role = aws_iam_role.metabase.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["ssm:GetParameter"]
+        Resource = [
+          aws_ssm_parameter.metabase_versao.arn,
+          aws_ssm_parameter.cloudflare_tunnel_token.arn,
+        ]
+      },
+      {
+        # Exigido pra ler o SecureString do token.
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = "*"
+        Condition = {
+          StringEquals = { "kms:ViaService" = "ssm.${var.aws_region}.amazonaws.com" }
+        }
+      },
+    ]
+  })
 }
 
 resource "aws_iam_role_policy" "metabase" {
@@ -141,6 +179,35 @@ resource "aws_iam_role_policy" "metabase" {
 }
 
 # ---------------------------------------------------------------------------
+# Configuracao que a instancia le no boot
+# ---------------------------------------------------------------------------
+# Versao e token ficam no SSM, e nao no user_data, porque user_data SO RODA
+# NA CRIACAO. Se estivessem la, trocar a versao ou o token exigiria recriar a
+# instancia -- e isso apaga o disco raiz, onde moram os dashboards.
+#
+# Assim um reinicio (ou o script rodado via SSM) pega a configuracao nova.
+
+resource "aws_ssm_parameter" "metabase_versao" {
+  name        = "/${var.project_name}/${var.ambiente}/metabase-versao"
+  description = "Tag da imagem do Metabase que a instancia deve rodar."
+  type        = "String"
+  value       = var.metabase_versao
+}
+
+resource "aws_ssm_parameter" "cloudflare_tunnel_token" {
+  name        = "/${var.project_name}/${var.ambiente}/cloudflare-tunnel-token"
+  description = "Token do Cloudflare Tunnel. Vazio = sem tunel."
+  type        = "SecureString"
+  value       = var.cloudflare_tunnel_token == "" ? "nao-configurado" : var.cloudflare_tunnel_token
+
+  # O token real pode ser colocado direto no console sem passar pelo
+  # Terraform (e sem ficar no state). Por isso o valor nao e reconciliado.
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# ---------------------------------------------------------------------------
 # A instancia
 # ---------------------------------------------------------------------------
 
@@ -170,25 +237,15 @@ resource "aws_instance" "metabase" {
     http_put_response_hop_limit = 2
   }
 
-  user_data = <<-SCRIPT
-    #!/bin/bash
-    set -euxo pipefail
-    dnf install -y docker
-    systemctl enable --now docker
-    mkdir -p /opt/metabase-dados
-
-    # --restart unless-stopped: o container volta sozinho quando a instancia
-    # e religada, sem precisar rodar nada. O user_data so executa na criacao.
-    #
-    # -Xmx1g deixa folga pro sistema nos 2 GB da t4g.small; sem limite a JVM
-    # tenta usar ~75% da memoria e o OOM killer derruba o container.
-    docker run -d --name metabase --restart unless-stopped \
-      -p 3000:3000 \
-      -v /opt/metabase-dados:/metabase-dados \
-      -e MB_DB_FILE=/metabase-dados/metabase.db \
-      -e JAVA_OPTS="-Xmx1g" \
-      metabase/metabase:latest
-  SCRIPT
+  # Em arquivo proprio, e nao heredoc inline: o script tem "$VERSAO" e "$1"
+  # do shell, que dentro de um heredoc do HCL brigam com a interpolacao do
+  # Terraform. Mesma razao de o ASL do Step Functions viver em JSON separado.
+  user_data = templatefile("${path.module}/ec2/metabase-boot.sh.tftpl", {
+    regiao        = var.aws_region
+    param_versao  = aws_ssm_parameter.metabase_versao.name
+    param_token   = aws_ssm_parameter.cloudflare_tunnel_token.name
+    versao_padrao = var.metabase_versao
+  })
 
   # user_data so roda na criacao. Mudar o script acima exige recriar a
   # instancia -- e isso apaga os dashboards junto, porque eles moram no

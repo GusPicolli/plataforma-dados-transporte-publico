@@ -174,3 +174,38 @@ variable "metabase_cidr_liberado" {
   type        = string
   default     = ""
 }
+
+variable "metabase_versao" {
+  description = <<-TEXTO
+    Tag da imagem do Metabase. Padrao: uma versao da linha LTS.
+
+    NAO use "latest". O container baixa a imagem uma vez e o
+    "--restart unless-stopped" mantem AQUELA imagem pra sempre -- entao
+    "latest" nao atualiza nada, so esconde qual versao esta rodando. Em
+    alguns meses vira uma versao sem patch, e o Metabase ja teve CVE de
+    execucao remota ANTES da autenticacao (CVE-2023-38646).
+
+    Atualizar: mudar aqui, aplicar, e rodar "make metabase-aws-atualizar".
+  TEXTO
+  type        = string
+  default     = "v0.64.5.2"
+}
+
+variable "cloudflare_tunnel_token" {
+  description = <<-TEXTO
+    Token do Cloudflare Tunnel. Vazio (padrao) = sem tunel, e a maquina nao
+    atende ninguem de fora.
+
+    O tunel resolve o problema maior: sem ele o Metabase atende em HTTP puro
+    num IP publico, e a senha de administrador trafega em texto claro. Com
+    ele o trafego e HTTPS ate a Cloudflare, e a instancia faz so conexao de
+    SAIDA -- nenhuma porta aberta na AWS.
+
+    Pegue em: Cloudflare Zero Trust > Networks > Tunnels > Create a tunnel.
+    Pode preencher aqui ou direto no SSM (o valor nao e reconciliado pelo
+    Terraform, entao nao fica no state).
+  TEXTO
+  type        = string
+  default     = ""
+  sensitive   = true
+}
