@@ -41,7 +41,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "dados" {
     }
 
     # A camada bronze e imutavel e cresce todo mes (ja registrado como risco
-    # na Proposta_inicial) -- isso e o guardrail combinado la, nao uma
+    # na proposta inicial) -- isso e o guardrail combinado la, nao uma
     # decisao nova.
     transition {
       days          = 90

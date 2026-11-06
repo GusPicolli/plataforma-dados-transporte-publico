@@ -117,9 +117,9 @@ O padrão de uso é em rajadas curtas — cada ingestão dura de segundos a pouc
 
 ### Desenho da arquitetura
 
-![Arquitetura das ferramentas propostas](arquitetura-ferramentas.svg)
+![Arquitetura das ferramentas propostas](arquitetura-proposta.svg)
 
-*Linhas pontilhadas = gatilho/credencial (agendamento ou segredo); linhas cheias = fluxo de dado. Arquivo em `arquitetura-ferramentas.svg`, na raiz do repositório — é uma imagem estática, então renderiza em qualquer visualizador de Markdown, sem depender de suporte a Mermaid.*
+*Linhas pontilhadas = gatilho/credencial (agendamento ou segredo); linhas cheias = fluxo de dado. Arquivo em `arquitetura-proposta.svg`, na raiz do repositório — é uma imagem estática, então renderiza em qualquer visualizador de Markdown, sem depender de suporte a Mermaid.*
 
 ### Camadas de dados — arquitetura medallion
 

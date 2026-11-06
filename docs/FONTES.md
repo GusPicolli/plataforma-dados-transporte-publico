@@ -4,7 +4,7 @@ Isto é uma referência pra quem for operar/debugar os pipelines desta fase:
 formato, frequência e particularidade de cada fonte, mais o que a
 ingestão faz com isso (schema, retry, onde cai no S3). O histórico de
 *descoberta* de cada fonte (como validamos, o que foi testado ao vivo)
-está em [`Proposta_inicial_Mapeamento_rotas_onibus.md`](Proposta_inicial_Mapeamento_rotas_onibus.md)
+está em [`PROPOSTA.md`](PROPOSTA.md)
 — este documento não repete aquilo, só complementa com o que essa fase
 de implementação acrescentou.
 
@@ -109,12 +109,17 @@ quais campos do bronze viram quais campos do modelo canônico
 renomeado na origem, se resolve adicionando uma entrada naquele dicionário —
 sem tocar no handler.
 
-**Disparo:** evento do S3, não agendamento. Quando a bronze grava um
-`.ndjson`, o S3 notifica a Lambda e o evento já traz bucket+key. Isso
-elimina orquestração e desacopla: a ingestão nem sabe que a silver existe.
-O handler também aceita `{"bucket": ..., "key": ...}` manual, pra
-reprocessar. O filtro da notificação (`prefix=bronze/`, `suffix=.ndjson`) é
-o que impede a silver de disparar em cima do próprio Parquet que ela grava.
+**Disparo:** chamada explícita pelo Step Functions, depois que todas as
+fontes daquela execução terminaram. O fluxo passa as chaves gravadas na
+bronze, e o handler também aceita `{"bucket": ..., "key": ...}` manual, para
+reprocessar.
+
+Houve antes um gatilho por **evento do S3**, que era mais desacoplado — a
+ingestão nem precisava saber que a silver existia. Ele parou de disparar;
+configuração, permissão e estado da função foram verificados sem se achar a
+causa, e ele foi removido. A chamada explícita acabou sendo melhor de
+qualquer forma: o evento dizia "um objeto chegou", enquanto o fluxo diz "a
+coleta terminou" — que é a informação de que a silver precisa.
 
 **Saída:** Parquet com schema declarado explicitamente (derivado do model
 pydantic, não inferido dos dados — inferir quebraria numa coluna

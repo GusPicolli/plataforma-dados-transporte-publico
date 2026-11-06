@@ -41,7 +41,7 @@ resource "aws_cloudwatch_log_group" "funcoes" {
   for_each = local.funcoes
 
   name              = "/aws/lambda/${var.project_name}-${replace(each.key, "_", "-")}"
-  retention_in_days = 30 # ver "Governanca de custo" na Proposta_inicial
+  retention_in_days = 30 # ver "Governanca de custo" na proposta inicial
 }
 
 resource "aws_lambda_function" "funcoes" {

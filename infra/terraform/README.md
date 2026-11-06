@@ -1,7 +1,11 @@
 # Infraestrutura — Terraform
 
+> Procurando o que **olhar no console** da AWS, e não como a infraestrutura é
+> declarada? O roteiro de verificação, serviço por serviço, está em
+> [`docs/AWS.md`](../../docs/AWS.md).
+
 Implementa a arquitetura da
-[Proposta_inicial_Mapeamento_rotas_onibus.md](../../docs/Proposta_inicial_Mapeamento_rotas_onibus.md):
+[PROPOSTA.md](../../docs/PROPOSTA.md):
 **7 funções Lambda** — 5 de ingestão, 1 de normalização para a camada silver e
 1 de heartbeat — mais agendamento, observabilidade e um bucket S3 com bronze e
 silver. Athena e Metabase ainda não entram; esta fase é ingestão e normalização.
@@ -14,11 +18,12 @@ Foi aplicado numa conta AWS real e está no ar. `terraform plan` acusa
 O que já foi exercido de verdade, não só planejado:
 
 - As 7 funções executaram na AWS, não só localmente.
-- O caminho completo roda sem intervenção: EventBridge dispara, a Lambda grava
-  o NDJSON na bronze, o evento do S3 aciona a silver, e o Parquet aparece no
-  mesmo minuto.
-- Os alarmes foram validados **contra falha real** — o único aceso é o do
-  `rio_cadastro`, que está genuinamente quebrado.
+- O caminho completo roda sem intervenção: o EventBridge dispara o fluxo do
+  Step Functions, as Lambdas gravam o NDJSON na bronze e, terminada a coleta,
+  o próprio fluxo chama a silver — o Parquet aparece no mesmo minuto.
+- Os alarmes foram validados **contra falha real**: quando o GTFS do Rio saiu
+  do ar, o alarme `rio-cadastro-dado-velho` acendeu apontando para a fonte
+  certa, e as outras praças seguiram carregando.
 
 ### Falha conhecida: `rio_cadastro`
 
@@ -161,11 +166,11 @@ make tf-destroy    # apaga tudo, inclusive os dados no S3 (pede confirmação)
 
 | Recurso | Qtd | Observação |
 |---|---|---|
-| `aws_s3_bucket` | 1 | Guarda bronze **e** silver, separados por prefixo. Criptografia em repouso e bloqueio de acesso público ligados; sem versionamento |
+| `aws_s3_bucket` | 2 | O de dados guarda bronze, silver e gold separados por prefixo; o de auditoria guarda o CloudTrail. Ambos com criptografia em repouso e bloqueio de acesso público; sem versionamento |
 | `aws_ecr_repository` | 1 | A imagem compartilhada pelas 7 funções; lifecycle mantém as 10 tags mais recentes |
 | `aws_lambda_function` | 7 | 5 de ingestão + `silver` + `heartbeat` — `package_type = "Image"`, mesma imagem, `command` diferente em cada |
-| `aws_scheduler_schedule` | 6 | 5 de ingestão + o heartbeat de hora em hora. A `silver` não tem: dispara por evento do S3 |
-| `aws_s3_bucket_notification` | 1 | bronze → silver, filtrado por prefixo `bronze/` e sufixo `.ndjson` (sem os dois, laço infinito) |
+| `aws_sfn_state_machine` | 1 | Fluxo genérico de coleta: fan-out nas fontes, fan-in na silver |
+| `aws_scheduler_schedule` | 3 | posições, cadastro e o heartbeat de hora em hora. Os dois primeiros disparam o mesmo fluxo, mudando só a lista de fontes |
 | `aws_cloudwatch_metric_alarm` | 15 | Erro (7), dado velho (5), qualidade do dado (3) |
 | `aws_cloudwatch_log_metric_filter` | 8 | Transformam o log JSON em métrica |
 | `aws_cloudwatch_dashboard` | 1 | Painel único |
@@ -398,15 +403,18 @@ descartados, e um widget de log com os últimos WARNING e ERROR das 6 funções.
 ## Testar localmente antes de publicar
 
 ```bash
-../docker/run_local.sh lambdas.rio_posicoes.handler.lambda_handler
+make docker-run FONTE=rio_posicoes
 # noutro terminal:
 curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
 ```
 
-Isso usa o Runtime Interface Emulator que já vem na imagem base da AWS —
-não precisa instalar nada além do Docker. Detalhes de como apontar pra um
-S3 de mentira (MinIO) em vez da AWS real estão comentados dentro do
-`run_local.sh`.
+Isso usa o Runtime Interface Emulator que já vem na imagem base da AWS — não
+precisa instalar nada além do Docker.
+
+As fontes válidas são `sp_posicoes`, `rio_posicoes`, `sp_cadastro`,
+`rio_cadastro` e `fortaleza_cadastro`. Não há um handler por fonte: todas
+usam `lambdas.ingestao.handler`, e a variável `FONTE` escolhe qual coletar —
+exatamente como na AWS.
 
 ## Destruir
 
