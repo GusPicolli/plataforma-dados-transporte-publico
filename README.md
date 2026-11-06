@@ -147,11 +147,21 @@ make tf-destroy    # APAGA tudo, inclusive os dados no S3 (pede confirmação)
 O ciclo destroy → bootstrap foi validado duas vezes: 73 recursos destruídos,
 78 reconstruídos, zero divergência.
 
-## O que procurar na conta AWS
+## Vendo o fluxo inteiro funcionando
 
-Para conferir pelo console que está tudo de pé — e entender o que cada recurso
-é — veja [`docs/AWS.md`](docs/AWS.md). É um roteiro de verificação direto,
-serviço por serviço.
+Para percorrer o projeto de ponta a ponta na AWS — do disparo até o dashboard,
+na ordem em que o dado anda — siga [`docs/DEMO.md`](docs/DEMO.md). Ele começa
+por um comando que resolve o problema mais comum de uma demonstração:
+
+```bash
+make trigger    # dispara uma coleta AGORA, sem esperar o agendamento
+```
+
+A coleta automática só roda das 8h às 16h59 em dia útil; fora dessa janela não
+há execução nenhuma para mostrar.
+
+Para conferir recurso por recurso o que existe na conta, veja
+[`docs/AWS.md`](docs/AWS.md).
 
 ## Mapa do repositório
 
@@ -188,7 +198,7 @@ output/                 CSVs gerados localmente (gitignored)
 | Coleta local das 3 praças | funciona |
 | Ingestão na AWS (bronze) | funciona |
 | Normalização bronze → silver (Parquet + H3) | funciona, chamada pelo Step Functions |
-| Camada gold dimensional (dbt) | funciona: 4 modelos, 16 testes |
+| Camada gold dimensional (dbt) | funciona: 4 modelos, 17 testes |
 | Catálogo Glue + Athena | funciona, com partition projection |
 | Metabase na AWS, sem chave de acesso | funciona |
 | Observabilidade (15 alarmes, painel, heartbeat) | funciona |
@@ -230,6 +240,7 @@ alarme `rio-cadastro-dado-velho` ficou aceso apontando para o problema.
 
 | Arquivo | O que tem |
 |---|---|
+| [`docs/DEMO.md`](docs/DEMO.md) | Roteiro de demonstração: a ordem para ver o fluxo inteiro, com as consultas prontas |
 | [`docs/AWS.md`](docs/AWS.md) | Roteiro de verificação na conta AWS: o que procurar, onde, e o que significa |
 | [`docs/FONTES.md`](docs/FONTES.md) | Referência por fonte: formato, frequência real, particularidades e armadilhas |
 | [`docs/MODELAGEM.md`](docs/MODELAGEM.md) | Entidades, chaves, grão e relacionamentos, medidos nos dados reais |

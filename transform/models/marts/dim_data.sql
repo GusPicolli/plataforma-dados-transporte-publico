@@ -24,7 +24,14 @@ select
     -- Parquet ("Incorrect timestamp precision ... configured precision is
     -- MILLISECONDS").
     cast(data as date)                           as data,
-    cast(data as varchar)                        as data_texto,
+    -- O cast pra DATE aqui tambem nao e opcional, e pelo mesmo motivo: o
+    -- sequence() acima devolve TIMESTAMP (o passo e um interval day), entao
+    -- "cast(data as varchar)" sozinho rendia '2026-11-06 00:00:00'.
+    --
+    -- Esta e a coluna que casa com fato_posicoes.dt, que e '2026-11-06'. Com
+    -- o horario junto a juncao nao dava erro -- devolvia ZERO LINHA, em
+    -- silencio. Achado testando as consultas do roteiro de demonstracao.
+    cast(cast(data as date) as varchar)          as data_texto,
     year(data)                                   as ano,
     month(data)                                  as mes,
     day(data)                                    as dia,

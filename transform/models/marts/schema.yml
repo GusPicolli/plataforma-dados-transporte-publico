@@ -87,6 +87,22 @@ models:
     columns:
       - name: id_veiculo
         tests: [not_null]
+      - name: dt
+        description: >
+          Data da particao, como texto. E a chave de juncao com dim_data.
+        tests:
+          # ESTE TESTE NAO EXISTIA, e por isso um defeito passou despercebido:
+          # dim_data.data_texto vinha como '2026-11-06 00:00:00' em vez de
+          # '2026-11-06', porque o sequence() que gera a dimensao devolve
+          # TIMESTAMP, nao DATE.
+          #
+          # A juncao nao dava erro -- devolvia ZERO LINHA, em silencio. A
+          # dimensao de data estava inutilizavel e nada acusava. Toda chave de
+          # juncao do modelo precisa de um teste assim.
+          - relationships:
+              arguments:
+                to: ref('dim_data')
+                field: data_texto
       - name: instante_utc
         description: >
           Instante real em UTC. Para o Rio soma 3 horas, porque a origem

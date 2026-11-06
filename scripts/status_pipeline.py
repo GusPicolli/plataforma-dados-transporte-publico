@@ -163,7 +163,7 @@ def main():
         print(f"[{situacao:^7}] {nome:<20} {idade_txt:<16} {execucoes:>8} {erros:>5}  {detalhe}")
 
     print()
-    print("SILVER (gerada automaticamente pelo evento do S3)")
+    print("SILVER (gerada pelo Step Functions ao fim de cada coleta)")
     for praca, entidade in [("sp", "posicoes"), ("sp", "linhas"), ("sp", "pontos"),
                             ("rio", "posicoes"), ("rio", "linhas"), ("rio", "pontos"),
                             ("fortaleza", "linhas"), ("fortaleza", "pontos")]:

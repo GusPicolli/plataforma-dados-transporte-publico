@@ -1,5 +1,8 @@
 # O que procurar na conta AWS
 
+> Quer **percorrer o fluxo** do disparo ao dashboard, em ordem, em vez de
+> conferir recurso por recurso? Use [`DEMO.md`](DEMO.md).
+
 Roteiro para conferir, pelo console, que o projeto está de pé — e para
 entender o que cada recurso é. Serve tanto para quem nunca viu a conta quanto
 para quem precisa diagnosticar algo que parou.

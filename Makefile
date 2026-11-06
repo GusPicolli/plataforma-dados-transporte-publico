@@ -192,6 +192,15 @@ deploy: publish tf-plan tf-apply refresh  ## Deploy completo: imagem -> ECR -> T
 	@echo ""
 	@echo "Deploy concluido. Verifique com 'make status'."
 
+# Disparar o fluxo na mao, sem esperar o agendamento.
+#
+# Util pra demonstrar e pra testar: a coleta so roda das 8h as 16h59 em dia
+# util, entao fora dessa janela nao ha execucao nenhuma pra mostrar. Isto
+# starta o MESMO fluxo que o EventBridge starta, com a mesma entrada -- o que
+# aparece no historico e indistinguivel de uma execucao agendada.
+trigger:  ## Dispara uma coleta AGORA e mostra o link pra acompanhar. Ex: make trigger GRUPO=cadastro
+	@$(PY) scripts/disparar_coleta.py $(GRUPO)
+
 tf-ligar:  ## Liga os agendamentos -- passa a coletar sozinho (e a gerar custo)
 	$(TF) plan -var 'agendamento_habilitado=true' -out=plano.tfplan
 	$(TF) apply plano.tfplan
