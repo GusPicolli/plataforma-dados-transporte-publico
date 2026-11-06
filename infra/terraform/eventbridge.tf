@@ -11,45 +11,7 @@ resource "aws_iam_role" "scheduler_invocacao" {
   })
 }
 
-resource "aws_iam_role_policy" "scheduler_invoca_lambda" {
-  name = "invoca-lambdas-ingestao"
-  role = aws_iam_role.scheduler_invocacao.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = "lambda:InvokeFunction"
-      Resource = [for f in aws_lambda_function.funcoes : f.arn]
-    }]
-  })
-}
-
-# Cada agendamento tem sua propria politica de retry no nivel do Scheduler
-# -- diferente do retry do tenacity dentro do codigo (lambdas/common/retry.py).
-# O tenacity cobre falha transitoria numa chamada HTTP especifica; isso aqui
-# cobre a invocacao INTEIRA da Lambda falhar (ex: erro nao tratado, timeout).
-resource "aws_scheduler_schedule" "funcoes" {
-  for_each = local.funcoes
-
-  name       = "${var.project_name}-${replace(each.key, "_", "-")}"
-  group_name = "default"
-  state      = var.agendamento_habilitado ? "ENABLED" : "DISABLED"
-
-  flexible_time_window {
-    mode = "OFF"
-  }
-
-  schedule_expression          = each.value.agenda
-  schedule_expression_timezone = var.timezone_agendamento
-
-  target {
-    arn      = aws_lambda_function.funcoes[each.key].arn
-    role_arn = aws_iam_role.scheduler_invocacao.arn
-
-    retry_policy {
-      maximum_retry_attempts       = 2
-      maximum_event_age_in_seconds = 300
-    }
-  }
-}
+# A politica de invocar as Lambdas de ingestao e os agendamentos por funcao
+# sairam daqui: TODAS as fontes passaram a ser disparadas pelo Step Functions
+# (orquestracao.tf). Este papel permanece porque o heartbeat ainda e um
+# agendamento direto -- ver a politica em heartbeat.tf.

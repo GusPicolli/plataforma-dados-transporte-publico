@@ -1,0 +1,108 @@
+{
+  "Comment": "Coleta generica: recebe a lista de fontes, coleta em paralelo e normaliza para a silver. O mesmo fluxo serve posicoes e cadastro -- o que muda e a lista que o agendamento passa.",
+  "StartAt": "Coletar",
+  "States": {
+
+    "Coletar": {
+      "Type": "Map",
+      "Comment": "Fan-out. MaxConcurrency 3 e deliberado: a conta tem limite de 10 execucoes concorrentes de Lambda, e a etapa seguinte tambem consome desse teto.",
+      "ItemsPath": "$.fontes",
+      "MaxConcurrency": 3,
+      "Next": "Normalizar",
+      "Iterator": {
+        "StartAt": "Invocar",
+        "States": {
+          "Invocar": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": { "FunctionName.$": "$.funcao", "Payload": {} },
+            "ResultSelector": {
+              "praca.$": "$.Payload.praca",
+              "fonte.$": "$.Payload.fonte",
+              "s3_keys.$": "$.Payload.s3_keys",
+              "degradado": false
+            },
+            "Retry": [
+              {
+                "Comment": "So erro de infraestrutura da Lambda. Erro da ORIGEM ja foi tratado pelo tenacity dentro da funcao; repetir aqui so somaria espera.",
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 5,
+                "MaxAttempts": 2,
+                "BackoffRate": 2
+              }
+            ],
+            "Catch": [
+              {
+                "Comment": "Degradacao generica: QUALQUER fonte que falhe vira estado, e as demais seguem. Nao e um caso especial do Rio -- so por acaso o Rio e quem falha hoje (403 do ArcGIS).",
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.erro",
+                "Next": "Degradada"
+              }
+            ],
+            "End": true
+          },
+          "Degradada": {
+            "Type": "Pass",
+            "Comment": "Mesmo formato do ramo que deu certo, pra etapa seguinte nao precisar saber quem falhou. s3_keys vazio faz o Map seguinte nao iterar -- sem condicional nenhuma.",
+            "Parameters": {
+              "funcao.$": "$.funcao",
+              "s3_keys": [],
+              "degradado": true
+            },
+            "End": true
+          }
+        }
+      }
+    },
+
+    "Normalizar": {
+      "Type": "Map",
+      "Comment": "Fan-in: a silver e chamada EXPLICITAMENTE aqui. Antes isso acontecia por evento do S3, que parou de funcionar -- e o evento nao dava sinal de conclusao da carga, que e o motivo de orquestrar.",
+      "ItemsPath": "$",
+      "MaxConcurrency": 3,
+      "Parameters": { "s3_keys.$": "$$.Map.Item.Value.s3_keys" },
+      "Next": "Concluido",
+      "Iterator": {
+        "StartAt": "PorChave",
+        "States": {
+          "PorChave": {
+            "Type": "Map",
+            "ItemsPath": "$.s3_keys",
+            "MaxConcurrency": 2,
+            "End": true,
+            "Iterator": {
+              "StartAt": "InvocarSilver",
+              "States": {
+                "InvocarSilver": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Parameters": {
+                    "FunctionName": "${arn_silver}",
+                    "Payload": { "bucket": "${bucket}", "key.$": "$" }
+                  },
+                  "ResultSelector": { "destino.$": "$.Payload.detalhe[0].destino" },
+                  "Retry": [
+                    {
+                      "ErrorEquals": ["Lambda.TooManyRequestsException"],
+                      "IntervalSeconds": 3,
+                      "MaxAttempts": 3,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "End": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "Concluido": { "Type": "Succeed" }
+  }
+}

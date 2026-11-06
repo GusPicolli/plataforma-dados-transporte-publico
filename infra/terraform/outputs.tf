@@ -25,5 +25,5 @@ output "parametro_token_sptrans" {
 
 output "agendamentos" {
   description = "Nome de cada schedule no EventBridge Scheduler."
-  value       = { for k, s in aws_scheduler_schedule.funcoes : k => s.name }
+  value       = { for k, s in aws_scheduler_schedule.coleta : k => s.name }
 }
