@@ -159,9 +159,21 @@ resource "aws_iam_role_policy" "metabase" {
         Resource = "*"
       },
       {
-        # LER o Parquet da silver/gold.
+        # LER o Parquet da silver/gold, e VERIFICAR o bucket de saida.
+        #
+        # GetBucketLocation e ListBucketMultipartUploads nao sao opcionais:
+        # o driver JDBC do Athena checa o bucket de staging antes da primeira
+        # consulta e falha com "Unable to verify/create output bucket" sem
+        # eles. Descoberto testando com a role de verdade -- no Metabase
+        # local isso passava porque ele usa a chave de administrador, que
+        # esconde qualquer furo de permissao.
         Effect = "Allow"
-        Action = ["s3:GetObject", "s3:ListBucket"]
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:ListBucketMultipartUploads",
+        ]
         Resource = [
           aws_s3_bucket.dados.arn,
           "${aws_s3_bucket.dados.arn}/*",
@@ -170,8 +182,12 @@ resource "aws_iam_role_policy" "metabase" {
       {
         # GRAVAR o resultado da consulta. Esquecer este bloco faz TODA
         # consulta falhar -- o Athena grava o resultado antes de devolver.
-        Effect   = "Allow"
-        Action   = ["s3:PutObject", "s3:AbortMultipartUpload"]
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts",
+        ]
         Resource = "${aws_s3_bucket.dados.arn}/athena-results/*"
       },
     ]

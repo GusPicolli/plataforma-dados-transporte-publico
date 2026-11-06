@@ -71,10 +71,10 @@ rende ordens de grandeza.
 |---|---:|---|
 | Data warehouse gerenciado | ~US$ 2.400 | o volume cabe no Athena |
 | Airflow gerenciado (MWAA) | ~US$ 4.200 | Step Functions resolve o mesmo fan-out a custo ~zero |
-| Metabase hospedado 24/7 | ~US$ 200 | roda local; o Athena é acessível de fora da AWS |
+| Metabase hospedado 24/7 | ~US$ 127 | roda numa EC2 que liga sob demanda: ~US$ 6,40/mês no horário comercial contra ~US$ 17 ligado sempre |
 | Glue Crawler | ~US$ 100 | o schema já é conhecido — a silver grava a partir dele |
 | Plataforma de observabilidade paga | ~US$ 600 | CloudWatch com alarmes bem desenhados basta |
-| **Total evitado** | **~US$ 7.500/ano** | |
+| **Total evitado** | **~US$ 7.400/ano** | |
 
 A maior economia não está em nenhuma linha de fatura — está em decisões que
 nunca viraram linha.
@@ -89,8 +89,12 @@ Dado real do AWS Cost Explorer, 01/10 a 22/10/2026, na planilha
 | Total mensal | US$ 17,65 | **US$ 2,56** |
 
 **O desvio de −US$ 15,09 é quase inteiramente o Metabase.** A proposta previa
-um container 24/7 na AWS; decidimos rodar local, e o custo foi a zero sem
-perder nada — o Athena atende de qualquer lugar.
+um container 24/7 na AWS. A medição acima é do período em que ele rodava
+local, a custo zero. Hoje ele roda numa EC2 que liga sob demanda
+(`make metabase-aws-ligar`): some US$ 1,60/mês fixos de disco, mais
+~US$ 4,80 nos meses em que ficar ligado no horário comercial. Continua bem
+abaixo dos ~US$ 17 de um container sempre ligado, e o disco preserva os
+dashboards entre um desligamento e outro.
 
 O que de fato custa:
 
@@ -179,6 +183,11 @@ interrompe. Nenhuma exige recriar infraestrutura.
 - AWS Cost Explorer, agrupado por serviço — onde o dinheiro está indo
 - A planilha de estimado vs. real, atualizada mensalmente
 
-**O que ainda falta:** um AWS Budget com alerta automático por e-mail. Hoje o
-acompanhamento depende de alguém olhar — o mesmo problema que o heartbeat
-resolveu para o pipeline, e que aqui continua aberto.
+O acompanhamento não depende mais de alguém olhar: o AWS Budget em
+`infra/terraform/seguranca.tf` avisa por e-mail em US$ 10 (40%), em US$ 25
+(100%) e, antes disso, quando a *previsão* do mês passa de US$ 25 — o alerta
+de previsão é o que chega a tempo de agir. É o mesmo princípio do heartbeat
+do pipeline: o sinal procura a pessoa, não o contrário.
+
+O e-mail vem da variável `email_alertas`; em branco, o orçamento é criado sem
+notificação.

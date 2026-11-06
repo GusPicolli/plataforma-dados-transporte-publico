@@ -1,17 +1,27 @@
 #!/bin/bash
-# Roda UMA vez, na criacao da instancia. Instala um servico que, a cada
-# boot, le versao e token do SSM e sobe os containers -- por isso trocar
-# qualquer um dos dois nao exige recriar a maquina (o que apagaria o disco
-# raiz e, com ele, os dashboards).
+# Roda UMA vez, na criacao. Faz SO coisas rapidas: escreve o script de
+# verdade e habilita o servico que o executa.
+#
+# POR QUE ASSIM, e nao instalando tudo aqui: o Terraform DESLIGA a instancia
+# logo apos cria-la (metabase_ligado = false por padrao), e isso acontece em
+# segundos -- enquanto um "dnf install docker" leva minutos. Na primeira
+# versao a maquina era desligada no meio da instalacao, o cloud-init marcava
+# o user_data como "ja executou", e no boot seguinte nada subia.
+#
+# Agora a parte lenta mora num servico systemd HABILITADO. Se o desligamento
+# interromper, o proximo boot retoma -- sem depender de tempo nenhum.
 set -euxo pipefail
-
-dnf install -y docker
-systemctl enable --now docker
-mkdir -p /opt/metabase-dados
 
 cat > /usr/local/bin/subir-metabase.sh <<'FIM_SCRIPT'
 #!/bin/bash
+# Idempotente de proposito: roda a cada boot e pode ser interrompido a
+# qualquer momento sem deixar a maquina num estado intermediario.
 set -uo pipefail
+
+rpm -q docker >/dev/null 2>&1 || dnf install -y docker
+systemctl enable --now docker
+
+mkdir -p /opt/metabase-dados
 
 ler_param() {
   aws ssm get-parameter --region "REGIAO_AWS" --name "$1" --with-decryption \
@@ -22,10 +32,9 @@ VERSAO=$(ler_param "PARAM_VERSAO")
 [ -z "$VERSAO" ] && VERSAO="VERSAO_PADRAO"
 TOKEN=$(ler_param "PARAM_TOKEN")
 
-# ESCUTA SO EM LOCALHOST. O acesso de fora vem pelo tunel, que roda na
-# mesma maquina -- entao a porta nunca precisa ficar exposta na rede.
-# Mesmo que alguem abra a porta 3000 no security group por engano, nao
-# chega em nada.
+# ESCUTA SO EM LOCALHOST. O acesso de fora vem pelo tunel, que roda na mesma
+# maquina. Mesmo que alguem abra a porta 3000 no security group por engano,
+# nao chega em nada.
 docker rm -f metabase 2>/dev/null || true
 docker run -d --name metabase --restart unless-stopped \
   -p 127.0.0.1:3000:3000 \
@@ -43,10 +52,9 @@ if [ -n "$TOKEN" ] && [ "$TOKEN" != "nao-configurado" ]; then
 fi
 FIM_SCRIPT
 
-# Os marcadores sao substituidos aqui, e nao por interpolacao do Terraform
-# dentro do heredoc: "$VERSAO" e "$1" do shell seriam confundidos com
-# sintaxe do HCL e o arquivo fica ilegivel.
-sed -i "s|REGIAO_AWS|${regiao}|g;   s|PARAM_VERSAO|${param_versao}|g; \
+# Marcadores substituidos aqui, e nao por interpolacao do HCL dentro do
+# heredoc: "$VERSAO" e "$1" do shell brigariam com a sintaxe do Terraform.
+sed -i "s|REGIAO_AWS|${regiao}|g;      s|PARAM_VERSAO|${param_versao}|g; \
         s|PARAM_TOKEN|${param_token}|g; s|VERSAO_PADRAO|${versao_padrao}|g" \
     /usr/local/bin/subir-metabase.sh
 chmod +x /usr/local/bin/subir-metabase.sh
@@ -54,17 +62,25 @@ chmod +x /usr/local/bin/subir-metabase.sh
 cat > /etc/systemd/system/metabase.service <<'FIM_UNIT'
 [Unit]
 Description=Metabase e tunel Cloudflare
-After=docker.service
-Requires=docker.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/subir-metabase.sh
+# Se a rede ainda nao estiver pronta, ou a instalacao for interrompida,
+# tenta de novo em vez de desistir.
+Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
 FIM_UNIT
 
 systemctl daemon-reload
-systemctl enable --now metabase.service
+
+# "enable" grava o link em disco ANTES do "start" demorado. Mesmo que a
+# instancia seja desligada a seguir, o proximo boot executa o servico.
+systemctl enable metabase.service
+systemctl start --no-block metabase.service
