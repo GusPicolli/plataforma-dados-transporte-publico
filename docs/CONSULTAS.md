@@ -149,7 +149,8 @@ administrador local e configura as duas conexões (gold e silver). Comece pela
 ## Rodando na AWS, para outras pessoas acessarem
 
 ```bash
-make metabase-aws-ligar      # liga e libera o SEU IP atual
+make metabase-aws-ligar      # liga a instância (~3 min na primeira subida)
+make metabase-aws-tunel      # abre o túnel -> http://localhost:3000
 make metabase-aws-conexao    # mostra os valores da conexão
 make metabase-aws-desligar   # desliga; dashboards ficam
 ```
@@ -181,14 +182,69 @@ Por que EC2 e não Fargate: lá o container pode ser substituído a qualquer
 momento, então o banco de metadados precisaria de RDS — ~US$ 13/mês que
 **não desligam**, porque a AWS religa um RDS parado depois de 7 dias.
 
-### Segurança
+### Qual é o endereço?
 
-A porta 3000 fica fechada por padrão. O `metabase-aws-ligar` descobre o seu
-IP público do momento e libera **só ele** (`/32`). Metabase aberto para a
-internet, com conta de administrador, enxerga o data lake inteiro.
+**Por padrão, nenhum — e isso é intencional.** O Metabase escuta em
+`127.0.0.1:3000` *dentro* da instância, e o security group não tem regra de
+entrada. Um Metabase na internet aberta, com conta de administrador, enxerga
+o data lake inteiro atrás de uma senha só.
 
-Se o seu IP mudar (rede nova, IP dinâmico), rode o `ligar` de novo — ele
-atualiza a regra.
+Há dois jeitos de chegar nele:
+
+#### 1. Túnel SSM — para você mesmo
+
+```bash
+make metabase-aws-tunel      # depois, abra http://localhost:3000
+```
+
+O tráfego sai cifrado pela API da AWS, é autorizado por IAM e fica
+registrado no CloudTrail. **Nenhuma porta é aberta.** É mais seguro que SSH
+e não depende de qual é o seu IP hoje.
+
+Exige o `session-manager-plugin` instalado e no PATH — veja
+[Instalando o session-manager-plugin](#instalando-o-session-manager-plugin).
+
+#### 2. Cloudflare Tunnel — para outras pessoas
+
+Dá um endereço `https://` público e estável, sem abrir porta: o container
+`cloudflared` faz uma conexão de **saída** até a Cloudflare, e o tráfego
+chega por ela.
+
+1. No painel da Cloudflare: Zero Trust → Networks → Tunnels → Create a tunnel
+2. Aponte o hostname para `http://localhost:3000`
+3. Guarde o token:
+
+```bash
+aws ssm put-parameter --region us-east-1 --overwrite   --name /onibus-tempo-real/dev/cloudflare-tunnel-token   --type SecureString --value "SEU_TOKEN"
+make metabase-aws-atualizar   # relê o SSM e sobe o cloudflared
+```
+
+O token fica no SSM como `SecureString`, **nunca no Terraform nem no
+repositório** — o parâmetro tem `ignore_changes` no valor justamente para
+poder ser trocado fora do Terraform.
+
+Antes de expor para outras pessoas, ponha o acesso atrás de uma política da
+Cloudflare Access. Sem isso, o endereço é público para quem souber a URL.
+
+### Instalando o session-manager-plugin
+
+O instalador oficial exige privilégio de administrador. Sem ele, use o zip:
+
+```powershell
+# baixa e extrai (não precisa de admin)
+$tmp = "$env:TEMP\smp"
+Invoke-WebRequest -UseBasicParsing -OutFile "$tmp\p.zip" `
+  https://s3.amazonaws.com/session-manager-downloads/plugin/latest/windows/SessionManagerPlugin.zip
+Expand-Archive "$tmp\p.zip" $tmp -Force
+Expand-Archive "$tmp\package.zip" "$env:LOCALAPPDATA\session-manager-plugin" -Force
+
+# põe no PATH do usuário (permanente, sem admin)
+$bin = "$env:LOCALAPPDATA\session-manager-pluginin"
+[Environment]::SetEnvironmentVariable('Path',
+  ([Environment]::GetEnvironmentVariable('Path','User').TrimEnd(';') + ';' + $bin), 'User')
+```
+
+Abra um terminal novo e confirme com `session-manager-plugin --version`.
 
 ## Em SQL nativo, qualifique o schema
 

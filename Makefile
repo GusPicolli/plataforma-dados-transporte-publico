@@ -194,8 +194,10 @@ tf-destroy:  ## APAGA toda a infraestrutura, inclusive os dados no S3
 # A instancia fica DESLIGADA por padrao. Ligar e desligar nao destroi nada:
 # o disco persiste, e com ele dashboards, usuarios e conexoes.
 #
-# O "ligar" descobre o seu IP publico do momento e libera so ele na porta
-# 3000 -- Metabase aberto pra internet enxerga o data lake inteiro.
+# NENHUM destes alvos abre porta. O Metabase escuta so em 127.0.0.1 dentro
+# da instancia; quem quiser chegar nele usa "metabase-aws-tunel" (tunel SSM)
+# ou o Cloudflare Tunnel. Um Metabase aberto na internet enxerga o data lake
+# inteiro com uma senha so -- por isso o padrao e nao ter endereco.
 
 metabase-aws-ligar:  ## Liga a instancia do Metabase na AWS
 	@$(TF) plan -input=false -out=mb.tfplan -var 'metabase_ligado=true'
@@ -207,6 +209,9 @@ metabase-aws-ligar:  ## Liga a instancia do Metabase na AWS
 	@echo "e exposta, o Metabase escuta so em localhost dentro da maquina."
 	@echo ""
 	@echo "Sem tunel configurado ainda? Veja docs/CONSULTAS.md."
+
+metabase-aws-tunel:  ## Abre o Metabase em http://localhost:3000 por um tunel SSM
+	@ID=$$(aws ec2 describe-instances --region us-east-1 --filters "Name=tag:Name,Values=onibus-tempo-real-metabase" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text); test "$$ID" != "None" || (echo "A instancia nao esta ligada. Rode: make metabase-aws-ligar" && exit 1); echo ""; echo "Tunel aberto. Acesse:  http://localhost:3000"; echo "Deixe este terminal aberto; Ctrl+C fecha o tunel."; echo ""; aws ssm start-session --region us-east-1 --target "$$ID" --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
 
 metabase-aws-desligar:  ## Desliga a instancia (para de cobrar; dashboards ficam)
 	@$(TF) plan -input=false -out=mb.tfplan -var 'metabase_ligado=false'
