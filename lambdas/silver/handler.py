@@ -12,6 +12,8 @@ Aceita dois formatos de entrada:
 import time
 from urllib.parse import unquote_plus
 
+import h3
+
 from lambdas.common.logging_config import criar_logger
 from lambdas.common.s3_silver import escrever_parquet, ler_ndjson
 from lambdas.common.validation import validar_lote
@@ -43,14 +45,39 @@ def _particoes(key):
     )
 
 
+def _h3(latitude, longitude):
+    """Indice H3 nas resolucoes 8 e 9, ou (None, None) sem coordenada.
+
+    Calculado AQUI e nao no Athena porque o Athena nao tem funcao H3 --
+    nem nativa nem via UDF sem subir outra Lambda. Entao o indice entra
+    como coluna no Parquet, e qualquer consulta so agrupa por ele.
+
+    Coordenada invalida (texto vazio, fora de faixa) devolve nulo em vez de
+    derrubar o lote: mesma politica de validar_lote."""
+    if latitude is None or longitude is None:
+        return None, None
+    try:
+        lat, lon = float(latitude), float(longitude)
+    except (TypeError, ValueError):
+        return None, None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None, None
+    return h3.latlng_to_cell(lat, lon, 8), h3.latlng_to_cell(lat, lon, 9)
+
+
 def _normalizar(registros, mapeamento, praca):
     canonicos = []
+    tem_geo = {"h3_r8", "h3_r9"} <= set(mapeamento["modelo"].model_fields)
     for registro in registros:
         canonico = {
             campo_canonico: registro.get(campo_bronze)
             for campo_bronze, campo_canonico in mapeamento["campos"].items()
         }
         canonico["praca"] = praca
+        if tem_geo:
+            canonico["h3_r8"], canonico["h3_r9"] = _h3(
+                canonico.get("latitude"), canonico.get("longitude")
+            )
         canonicos.append(canonico)
     return canonicos
 

@@ -1,0 +1,128 @@
+version: 2
+
+models:
+
+  - name: dim_data
+    description: >
+      Dimensão de data, gerada (não vem de fonte). Existe para que "compare
+      dia útil com sábado" e "agrupe por mês" sejam um join, em vez de
+      manipulação do texto da partição dt.
+    columns:
+      - name: data
+        description: A data. Chave da dimensão.
+        tests: [unique, not_null]
+      - name: eh_fim_de_semana
+        description: Sábado ou domingo.
+      - name: tem_coleta_de_cadastro
+        description: >
+          Segunda a sexta. Fim de semana sem dado novo é esperado, não é
+          falha — serve para não acusar lacuna onde não há.
+
+  - name: dim_linhas
+    description: >
+      Uma linha por linha de ônibus, na versão mais recente (SCD Tipo 1). A
+      silver é append-only: cada coleta regrava o cadastro inteiro.
+    columns:
+      - name: praca
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['sp', 'rio', 'fortaleza']
+      - name: id_linha
+        tests: [not_null]
+      - name: codigo_base
+        description: Letreiro base. NÃO é único por praça — ver os testes.
+      - name: chave_linha
+        description: praca + codigo_base. É esta que as posições referenciam.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [praca, id_linha]
+
+      # FALHA DE PROPOSITO, como aviso permanente.
+      #
+      # Medido: 2.698 linhas de SP para 1.104 bases distintas, ou 2,44 linhas
+      # por base. O letreiro base ignora o sufixo (tl) e o sentido (sl), que
+      # a SPTrans usa pra distinguir variantes da mesma linha.
+      #
+      # Consequencia pratica: count(*) e sum() sobre o join fato x dimensao
+      # contam ~2,4 vezes. count(DISTINCT) continua correto.
+      #
+      # A chave exata e (lt, tl, sl) -- medida como 1:1 -- mas `tl` e `sl`
+      # nao existem no schema canonico, entao nao da pra construi-la aqui.
+      # Ver "Dividas do modelo" em docs/MODELAGEM.md.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [praca, codigo_base]
+          config:
+            severity: warn
+
+  - name: dim_pontos
+    description: >
+      Par (linha, parada), na versão mais recente. A mesma parada atende
+      várias linhas — por isso o grão é o par, não a parada.
+    columns:
+      - name: id_ponto
+        tests: [not_null]
+      - name: geometria_wkt
+        description: >
+          Ponto em WKT. Nulo em Fortaleza: a ETUFOR entrega a sequência de
+          logradouros do itinerário, não coordenadas.
+      - name: h3_r8
+        description: >
+          Célula H3 na resolução 8 (~0,74 km²) — agregação de bairro.
+          Calculada na silver: o Athena não tem função H3.
+      - name: h3_r9
+        description: Célula H3 na resolução 9 (~0,11 km²) — quarteirão.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [praca, id_linha, id_ponto]
+
+  - name: fato_posicoes
+    description: >
+      FATO: um veículo num instante. Não é deduplicado de propósito — posição
+      é evento, e o histórico é o dado.
+    columns:
+      - name: id_veiculo
+        tests: [not_null]
+      - name: instante_utc
+        description: >
+          Instante real em UTC. Para o Rio soma 3 horas, porque a origem
+          carimba "Z" num horário de Brasília.
+      - name: metros_ate_parada_mais_proxima
+        description: >
+          Distância até a parada mais próxima da própria linha, em metros.
+          Responde "está num ponto ou no meio do caminho?". Nulo quando a
+          praça não tem pontos com coordenada.
+      - name: geometria_wkt
+        description: Posição do veículo em WKT.
+      - name: h3_r8
+        description: Célula H3 na resolução 8 (~0,74 km²), para agregação espacial.
+      - name: h3_r9
+        description: Célula H3 na resolução 9 (~0,11 km²).
+      - name: chave_linha
+        description: >
+          Chave de junção com dim_linhas, com a praça embutida. Sem a praça,
+          1.202 posições do Rio casavam falsamente com linhas de SP de mesmo
+          número — o teste "relationships" compara uma coluna só.
+        tests:
+          # AVISO, nao erro. Medido: 242 orfas -- linhas que estao
+          # circulando mas nao constam no cadastro mais recente. E defasagem
+          # normal entre a coleta de posicao (1 min) e a de cadastro (1x/dia),
+          # nao falha de fonte.
+          #
+          # Fica como warn de proposito: teste que falha sempre e bloqueia o
+          # pipeline acaba sendo desligado, e aí deixa de avisar qualquer
+          # coisa. Como aviso, aparece em todo `dbt test` ate ser resolvido.
+          - relationships:
+              arguments:
+                to: ref('dim_linhas')
+                field: chave_linha
+              config:
+                severity: warn
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [praca, id_veiculo, instante_utc]

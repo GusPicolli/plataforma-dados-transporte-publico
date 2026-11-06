@@ -1,0 +1,23 @@
+# Sem segredo nem identificador de conta aqui.
+#
+# A credencial vem da cadeia padrao da AWS (o mesmo ~/.aws que o boto3 usa),
+# e o nome do bucket -- que embute o ID da conta -- vem de variavel de
+# ambiente, preenchida pelo Makefile a partir do terraform output. Assim o
+# arquivo pode ser versionado e funciona em qualquer conta.
+onibus:
+  target: dev
+  outputs:
+    dev:
+      type: athena
+      region_name: "{{ env_var('AWS_REGION', 'us-east-1') }}"
+      database: awsdatacatalog
+      schema: "{{ env_var('DBT_SCHEMA_GOLD') }}"
+      work_group: "{{ env_var('DBT_WORKGROUP') }}"
+      s3_staging_dir: "s3://{{ env_var('DBT_BUCKET') }}/athena-results/"
+      # ONDE AS TABELAS MATERIALIZADAS SAO GRAVADAS. Sem isto o dbt as
+      # escreve sob o s3_staging_dir -- que tem expiracao de 7 dias no ciclo
+      # de vida do bucket. A tabela seria apagada sozinha e o modelo passaria
+      # a devolver vazio, sem erro nenhum.
+      s3_data_dir: "s3://{{ env_var('DBT_BUCKET') }}/gold/"
+      s3_data_naming: schema_table
+      threads: 4

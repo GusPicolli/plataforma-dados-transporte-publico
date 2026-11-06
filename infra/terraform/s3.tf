@@ -4,6 +4,10 @@ resource "aws_s3_bucket" "dados" {
   # Nome de bucket e global entre todas as contas AWS -- inclui o account id
   # pra nao colidir com o de mais ninguem.
   bucket = "${var.project_name}-${var.ambiente}-${data.aws_caller_identity.atual.account_id}"
+
+  # Sem isto, o destroy falha em "BucketNotEmpty" -- que e a protecao certa
+  # pro dia a dia. Ver a variavel pra como o ciclo de teste contorna.
+  force_destroy = var.permitir_destruir_dados
 }
 
 resource "aws_s3_bucket_public_access_block" "dados" {
@@ -37,11 +41,55 @@ resource "aws_s3_bucket_lifecycle_configuration" "dados" {
     }
 
     # A camada bronze e imutavel e cresce todo mes (ja registrado como risco
-    # na Proposta_inicial) -- isso e o guardrail combinado la, nao uma
+    # na proposta inicial) -- isso e o guardrail combinado la, nao uma
     # decisao nova.
     transition {
       days          = 90
       storage_class = "STANDARD_IA"
+    }
+  }
+
+  # As posicoes crescem ~134 GB/mes com a coleta de minuto a minuto (medido:
+  # 4,15 MB por coleta das duas pracas). Sem esta regra o custo sai de ~US$ 4
+  # pra ~US$ 24/mes no mes 12, e continua subindo.
+  #
+  # Expira so o BRONZE de POSICOES. A silver e 93% menor, guarda o mesmo dado
+  # ja normalizado, e e o que as consultas usam -- o bronze aqui e copia de
+  # auditoria da resposta crua da API. Linhas e pontos nao entram: sao
+  # pequenos e coletados 1x/dia.
+  #
+  # Duas regras porque o filtro do S3 aceita um prefixo literal, sem curinga,
+  # e a praca vem antes da entidade no caminho. Fortaleza nao tem posicoes.
+  dynamic "rule" {
+    for_each = toset(["sp", "rio"])
+
+    content {
+      id     = "expirar-bronze-posicoes-${rule.value}"
+      status = "Enabled"
+
+      filter {
+        prefix = "bronze/praca=${rule.value}/entidade=posicoes/"
+      }
+
+      expiration {
+        days = 30
+      }
+    }
+  }
+
+  rule {
+    id     = "expirar-resultados-athena"
+    status = "Enabled"
+
+    filter {
+      prefix = "athena-results/"
+    }
+
+    # Resultado de consulta e descartavel: o Athena regrava em qualquer nova
+    # execucao. Sem esta regra, cada SELECT deixa um CSV no bucket para
+    # sempre -- lixo que ninguem lembra de limpar e que so aparece na fatura.
+    expiration {
+      days = 7
     }
   }
 }

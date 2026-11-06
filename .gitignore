@@ -12,4 +12,12 @@ infra/terraform/*.tfstate.*
 infra/terraform/terraform.tfvars
 infra/terraform/*.auto.tfvars
 infra/terraform/crash.log
+# plano salvo carrega os valores das variaveis, incluindo o token
+infra/terraform/*.tfplan
 # .terraform.lock.hcl NAO entra aqui -- o proprio terraform recomenda commitar
+
+# dbt (artefatos de execucao, regenerados por dbt run/deps)
+transform/target/
+transform/dbt_packages/
+transform/logs/
+transform/.user.yml

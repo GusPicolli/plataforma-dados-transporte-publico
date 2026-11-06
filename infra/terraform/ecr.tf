@@ -1,5 +1,9 @@
 resource "aws_ecr_repository" "lambda" {
-  name                 = "${var.project_name}-lambda"
+  name = "${var.project_name}-lambda"
+  # Mesma logica do bucket: sem isto o destroy falha porque ha imagem
+  # publicada no repositorio.
+  force_delete = var.permitir_destruir_dados
+
   image_tag_mutability = "MUTABLE" # "latest" precisa poder ser sobrescrita a cada push
 
   image_scanning_configuration {

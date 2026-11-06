@@ -71,26 +71,17 @@ resource "aws_lambda_function" "silver" {
   depends_on = [aws_cloudwatch_log_group.silver]
 }
 
-resource "aws_lambda_permission" "s3_invoca_silver" {
-  statement_id  = "AllowExecutionFromS3"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.silver.function_name
-  principal     = "s3.amazonaws.com"
-  source_arn    = aws_s3_bucket.dados.arn
-}
-
-resource "aws_s3_bucket_notification" "bronze_para_silver" {
-  bucket = aws_s3_bucket.dados.id
-
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.silver.arn
-    events              = ["s3:ObjectCreated:*"]
-
-    # Os dois filtros sao o que evita loop infinito: sem eles, o Parquet que
-    # a silver grava dispararia a propria silver de novo.
-    filter_prefix = "bronze/"
-    filter_suffix = ".ndjson"
-  }
-
-  depends_on = [aws_lambda_permission.s3_invoca_silver]
-}
+# O GATILHO POR EVENTO DO S3 FOI REMOVIDO.
+#
+# Ele existia pra acionar esta funcao quando a bronze gravava. Parou de
+# funcionar e nao consegui achar a causa: a configuracao de notificacao
+# estava correta no S3 (ARN, s3:ObjectCreated:*, prefixo e sufixo), a
+# permissao na Lambda existia com o SourceArn do bucket, a funcao estava
+# Active e aceitava invocacao assincrona direta. Testado com prefixo
+# especifico e com "bronze/" generico, recriado com -replace, e com 4
+# minutos de propagacao -- sem disparar em nenhum caso.
+#
+# A substituicao e melhor de qualquer forma: o Step Functions chama esta
+# funcao EXPLICITAMENTE (orquestracao.tf), o que da o sinal de conclusao da
+# carga que o evento nunca deu. O evento avisava "um objeto chegou"; o
+# fluxo responde "a coleta terminou".

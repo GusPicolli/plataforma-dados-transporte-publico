@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 770" width="1200" height="770" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif">
+
+  <!-- Arquitetura COMO FOI CONSTRUIDA. O desenho do que foi PROPOSTO, antes
+       da implementacao, vive junto da proposta (veja docs/PROPOSTA.md). -->
+
+  <defs>
+    <marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6B7280"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="770" fill="#FFFFFF"/>
+
+  <!-- ============================ titulo ============================ -->
+  <text x="36" y="42" font-size="21" font-weight="700" fill="#111827">Plataforma de dados de transporte publico &#183; arquitetura implantada</text>
+  <text x="36" y="66" font-size="13" fill="#4B5563">Tres pracas &#183; coleta agendada &#183; camadas medallion no S3 &#183; modelo dimensional em SQL &#183; dashboards</text>
+
+  <!-- ============================ fontes ============================ -->
+  <text x="36" y="106" font-size="10.5" font-weight="700" fill="#6B7280" letter-spacing="1.2">FONTES PUBLICAS</text>
+
+  <rect x="36" y="118" width="176" height="62" rx="6" fill="#FFFFFF" stroke="#536471" stroke-width="2"/>
+  <text x="124" y="143" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Sao Paulo</text>
+  <text x="124" y="162" text-anchor="middle" font-size="11.5" fill="#4B5563">API Olho Vivo &#183; GTFS</text>
+
+  <rect x="36" y="192" width="176" height="62" rx="6" fill="#FFFFFF" stroke="#536471" stroke-width="2"/>
+  <text x="124" y="217" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Rio de Janeiro</text>
+  <text x="124" y="236" text-anchor="middle" font-size="11.5" fill="#4B5563">API GPS &#183; GTFS</text>
+
+  <rect x="36" y="266" width="176" height="62" rx="6" fill="#FFFFFF" stroke="#536471" stroke-width="2"/>
+  <text x="124" y="291" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Fortaleza</text>
+  <text x="124" y="310" text-anchor="middle" font-size="11.5" fill="#4B5563">API ETUFOR &#183; sem GPS</text>
+
+  <!-- trilho que junta as tres fontes numa entrada so -->
+  <path d="M 212 149 H 232" stroke="#6B7280" stroke-width="1.5" fill="none"/>
+  <path d="M 212 223 H 232" stroke="#6B7280" stroke-width="1.5" fill="none"/>
+  <path d="M 212 297 H 232" stroke="#6B7280" stroke-width="1.5" fill="none"/>
+  <path d="M 232 149 V 293" stroke="#6B7280" stroke-width="1.5" fill="none"/>
+  <path d="M 232 293 H 276" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+
+  <!-- ============================ limite AWS ============================ -->
+  <rect x="248" y="92" width="916" height="586" rx="10" fill="#FAFAFA" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="266" y="116" font-size="11.5" font-weight="700" fill="#6B7280" letter-spacing="0.8">AWS &#183; us-east-1</text>
+
+  <!-- ============================ agendamento ============================ -->
+  <text x="276" y="146" font-size="10.5" font-weight="700" fill="#9CA3AF" letter-spacing="1.2">1 &#183; AGENDAMENTO</text>
+
+  <rect x="276" y="156" width="196" height="58" rx="6" fill="#FFFFFF" stroke="#E7157B" stroke-width="2"/>
+  <text x="374" y="180" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">EventBridge Scheduler</text>
+  <text x="374" y="199" text-anchor="middle" font-size="11.5" fill="#4B5563">2 agendas &#183; seg&#8211;sex &#183; fuso SP</text>
+
+  <rect x="496" y="156" width="196" height="58" rx="6" fill="#FFFFFF" stroke="#E7157B" stroke-width="2"/>
+  <text x="594" y="180" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Step Functions</text>
+  <text x="594" y="199" text-anchor="middle" font-size="11.5" fill="#4B5563">fluxo unico &#183; fan-out / fan-in</text>
+
+  <text x="716" y="178" font-size="11.5" fill="#6B7280">posicoes:  a cada minuto, 8h&#8211;16h59</text>
+  <text x="716" y="198" font-size="11.5" fill="#6B7280">cadastro:  7h</text>
+
+  <path d="M 472 185 H 496" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+  <path d="M 594 214 V 236 H 374 V 258" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+
+  <!-- ============================ coleta e camadas ============================ -->
+  <text x="276" y="248" font-size="10.5" font-weight="700" fill="#9CA3AF" letter-spacing="1.2">2 &#183; COLETA E CAMADAS</text>
+
+  <rect x="276" y="258" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#ED7100" stroke-width="2"/>
+  <text x="374" y="283" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Lambda ingestao</text>
+  <text x="374" y="301" text-anchor="middle" font-size="11.5" fill="#4B5563">5 funcoes, 1 handler</text>
+  <text x="374" y="317" text-anchor="middle" font-size="11.5" fill="#4B5563">imagem de container unica</text>
+
+  <rect x="496" y="258" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#7AA116" stroke-width="2"/>
+  <text x="594" y="283" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">S3 &#183; bronze</text>
+  <text x="594" y="301" text-anchor="middle" font-size="11.5" fill="#4B5563">NDJSON, como veio</text>
+  <text x="594" y="317" text-anchor="middle" font-size="11.5" fill="#4B5563">retencao de 30 dias</text>
+
+  <rect x="716" y="258" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#ED7100" stroke-width="2"/>
+  <text x="814" y="283" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Lambda silver</text>
+  <text x="814" y="301" text-anchor="middle" font-size="11.5" fill="#4B5563">schema canonico</text>
+  <text x="814" y="317" text-anchor="middle" font-size="11.5" fill="#4B5563">indice geoespacial H3</text>
+
+  <rect x="936" y="258" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#7AA116" stroke-width="2"/>
+  <text x="1034" y="283" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">S3 &#183; silver</text>
+  <text x="1034" y="301" text-anchor="middle" font-size="11.5" fill="#4B5563">Parquet particionado</text>
+  <text x="1034" y="317" text-anchor="middle" font-size="11.5" fill="#4B5563">93% menor que o bronze</text>
+
+  <path d="M 472 293 H 496" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+  <path d="M 692 293 H 716" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+  <path d="M 912 293 H 936" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+  <path d="M 1034 328 V 350 H 374 V 372" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+
+  <!-- ============================ catalogo e modelo ============================ -->
+  <text x="276" y="362" font-size="10.5" font-weight="700" fill="#9CA3AF" letter-spacing="1.2">3 &#183; CATALOGO E MODELO DIMENSIONAL</text>
+
+  <rect x="276" y="372" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+  <text x="374" y="397" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Glue Data Catalog</text>
+  <text x="374" y="415" text-anchor="middle" font-size="11.5" fill="#4B5563">tabelas declaradas</text>
+  <text x="374" y="431" text-anchor="middle" font-size="11.5" fill="#4B5563">partition projection</text>
+
+  <rect x="496" y="372" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+  <text x="594" y="397" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Athena</text>
+  <text x="594" y="415" text-anchor="middle" font-size="11.5" fill="#4B5563">workgroup dedicado</text>
+  <text x="594" y="431" text-anchor="middle" font-size="11.5" fill="#4B5563">corte em 1 GB por consulta</text>
+
+  <rect x="716" y="372" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+  <text x="814" y="397" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">dbt</text>
+  <text x="814" y="415" text-anchor="middle" font-size="11.5" fill="#4B5563">modelo Kimball</text>
+  <text x="814" y="431" text-anchor="middle" font-size="11.5" fill="#4B5563">16 testes de contrato</text>
+
+  <rect x="936" y="372" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#7AA116" stroke-width="2"/>
+  <text x="1034" y="397" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">S3 &#183; gold</text>
+  <text x="1034" y="415" text-anchor="middle" font-size="11.5" fill="#4B5563">3 dimensoes + 1 fato</text>
+  <text x="1034" y="431" text-anchor="middle" font-size="11.5" fill="#4B5563">pronto pra consumo</text>
+
+  <path d="M 472 407 H 496" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+  <path d="M 692 407 H 716" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+  <path d="M 912 407 H 936" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+  <path d="M 1034 442 V 464 H 374 V 486" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+
+  <!-- ============================ consumo ============================ -->
+  <text x="276" y="476" font-size="10.5" font-weight="700" fill="#9CA3AF" letter-spacing="1.2">4 &#183; CONSUMO</text>
+
+  <rect x="276" y="486" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#ED7100" stroke-width="2"/>
+  <text x="374" y="511" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Metabase</text>
+  <text x="374" y="529" text-anchor="middle" font-size="11.5" fill="#4B5563">EC2 t4g.small sob demanda</text>
+  <text x="374" y="545" text-anchor="middle" font-size="11.5" fill="#4B5563">credencial por instance profile</text>
+
+  <rect x="496" y="486" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#DD344C" stroke-width="2"/>
+  <text x="594" y="511" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Acesso sem porta aberta</text>
+  <text x="594" y="529" text-anchor="middle" font-size="11.5" fill="#4B5563">tunel SSM ou Cloudflare</text>
+  <text x="594" y="545" text-anchor="middle" font-size="11.5" fill="#4B5563">escuta so em 127.0.0.1</text>
+
+  <rect x="716" y="486" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+  <text x="814" y="511" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">SQL direto</text>
+  <text x="814" y="529" text-anchor="middle" font-size="11.5" fill="#4B5563">make query-gold</text>
+  <text x="814" y="545" text-anchor="middle" font-size="11.5" fill="#4B5563">sem passar por dashboard</text>
+
+  <rect x="936" y="486" width="196" height="70" rx="6" fill="#FFFFFF" stroke="#536471" stroke-width="2"/>
+  <text x="1034" y="511" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">CSV local</text>
+  <text x="1034" y="529" text-anchor="middle" font-size="11.5" fill="#4B5563">python main.py &lt;praca&gt;</text>
+  <text x="1034" y="545" text-anchor="middle" font-size="11.5" fill="#4B5563">sem AWS nenhuma</text>
+
+  <path d="M 496 521 H 472" stroke="#6B7280" stroke-width="1.5" fill="none" marker-end="url(#seta)"/>
+
+  <!-- ============================ transversal ============================ -->
+  <text x="276" y="590" font-size="10.5" font-weight="700" fill="#9CA3AF" letter-spacing="1.2">TRANSVERSAL &#183; OBSERVABILIDADE E SEGURANCA</text>
+
+  <rect x="276" y="600" width="196" height="58" rx="6" fill="#FFFFFF" stroke="#DD344C" stroke-width="2"/>
+  <text x="374" y="624" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">CloudWatch</text>
+  <text x="374" y="643" text-anchor="middle" font-size="11.5" fill="#4B5563">log por funcao &#183; 15 alarmes</text>
+
+  <rect x="496" y="600" width="196" height="58" rx="6" fill="#FFFFFF" stroke="#ED7100" stroke-width="2"/>
+  <text x="594" y="624" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">Lambda heartbeat</text>
+  <text x="594" y="643" text-anchor="middle" font-size="11.5" fill="#4B5563">publica a idade do dado</text>
+
+  <rect x="716" y="600" width="196" height="58" rx="6" fill="#FFFFFF" stroke="#E7157B" stroke-width="2"/>
+  <text x="814" y="624" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">SNS</text>
+  <text x="814" y="643" text-anchor="middle" font-size="11.5" fill="#4B5563">alarme vira e-mail</text>
+
+  <rect x="936" y="600" width="196" height="58" rx="6" fill="#FFFFFF" stroke="#DD344C" stroke-width="2"/>
+  <text x="1034" y="624" text-anchor="middle" font-size="13" font-weight="600" fill="#111827">CloudTrail &#183; Budget</text>
+  <text x="1034" y="643" text-anchor="middle" font-size="11.5" fill="#4B5563">auditoria &#183; teto de gasto</text>
+
+  <!-- ============================ rodape ============================ -->
+  <text x="36" y="712" font-size="11.5" fill="#6B7280">Custo medido: ~US$ 2,56/mes com o pipeline rodando. O Metabase so custa enquanto a instancia esta ligada.</text>
+  <text x="36" y="732" font-size="11.5" fill="#6B7280">Nenhuma chave de acesso e armazenada: as Lambdas usam role de execucao, a EC2 usa instance profile, o token da SPTrans vive no SSM Parameter Store.</text>
+  <text x="36" y="756" font-size="10.5" fill="#9CA3AF">Infraestrutura inteira declarada em Terraform. O desenho do que foi PROPOSTO, antes da implementacao, esta em arquitetura-proposta.svg.</text>
+
+</svg>

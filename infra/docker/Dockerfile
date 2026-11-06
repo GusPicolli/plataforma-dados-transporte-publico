@@ -1,4 +1,4 @@
-# Uma imagem, 5 funcoes. O handler de cada uma nao vem daqui -- vem de
+# Uma imagem, 7 funcoes. O handler de cada uma nao vem daqui -- vem de
 # "image_config.command" no Terraform (deploy) ou do argumento de
 # "docker run" (local). O CMD abaixo so entra em jogo se ninguem
 # especificar nenhum dos dois.
@@ -16,8 +16,8 @@ FROM public.ecr.aws/lambda/python:3.12
 COPY lambdas/requirements-layer.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 RUN pip install -r ${LAMBDA_TASK_ROOT}/requirements.txt -t ${LAMBDA_TASK_ROOT}
 
-COPY src ${LAMBDA_TASK_ROOT}/src
+COPY coleta ${LAMBDA_TASK_ROOT}/coleta
 COPY schemas ${LAMBDA_TASK_ROOT}/schemas
 COPY lambdas ${LAMBDA_TASK_ROOT}/lambdas
 
-CMD ["lambdas.sp_posicoes.handler.lambda_handler"]
+CMD ["lambdas.ingestao.handler.lambda_handler"]

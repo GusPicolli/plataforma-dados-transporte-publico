@@ -1,7 +1,11 @@
 # Infraestrutura — Terraform
 
+> Procurando o que **olhar no console** da AWS, e não como a infraestrutura é
+> declarada? O roteiro de verificação, serviço por serviço, está em
+> [`docs/AWS.md`](../../docs/AWS.md).
+
 Implementa a arquitetura da
-[Proposta_inicial_Mapeamento_rotas_onibus.md](../../docs/Proposta_inicial_Mapeamento_rotas_onibus.md):
+[PROPOSTA.md](../../docs/PROPOSTA.md):
 **7 funções Lambda** — 5 de ingestão, 1 de normalização para a camada silver e
 1 de heartbeat — mais agendamento, observabilidade e um bucket S3 com bronze e
 silver. Athena e Metabase ainda não entram; esta fase é ingestão e normalização.
@@ -14,11 +18,12 @@ Foi aplicado numa conta AWS real e está no ar. `terraform plan` acusa
 O que já foi exercido de verdade, não só planejado:
 
 - As 7 funções executaram na AWS, não só localmente.
-- O caminho completo roda sem intervenção: EventBridge dispara, a Lambda grava
-  o NDJSON na bronze, o evento do S3 aciona a silver, e o Parquet aparece no
-  mesmo minuto.
-- Os alarmes foram validados **contra falha real** — o único aceso é o do
-  `rio_cadastro`, que está genuinamente quebrado.
+- O caminho completo roda sem intervenção: o EventBridge dispara o fluxo do
+  Step Functions, as Lambdas gravam o NDJSON na bronze e, terminada a coleta,
+  o próprio fluxo chama a silver — o Parquet aparece no mesmo minuto.
+- Os alarmes foram validados **contra falha real**: quando o GTFS do Rio saiu
+  do ar, o alarme `rio-cadastro-dado-velho` acendeu apontando para a fonte
+  certa, e as outras praças seguiram carregando.
 
 ### Falha conhecida: `rio_cadastro`
 
@@ -64,33 +69,96 @@ Servem de aviso para quem for mexer:
 2. Docker Desktop (ou equivalente) rodando — pra build/push da imagem e pra testar local.
 3. AWS CLI configurado (`aws configure`) com permissão pra ECR, Lambda, S3, IAM, SSM e EventBridge Scheduler.
 
-## Deploy (2 fases — é assim mesmo, não é engano)
+## Deploy
 
-O Lambda só aceita ser criado apontando pra uma tag que **já existe** no
-ECR. Como o Terraform também é quem cria o repositório ECR, dá pra criar
-tudo de uma vez só na primeira vez:
+### Do zero (ou depois de um destroy)
 
 ```bash
-# 1. Configurar variaveis
-cp terraform.tfvars.example terraform.tfvars
-# edite terraform.tfvars com o SPTRANS_TOKEN real -- nunca commitar esse arquivo
+cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+# edite e coloque o SPTRANS_TOKEN real -- esse arquivo nunca vai pro git
 
-# 2. Criar so o repositorio ECR primeiro
-terraform init
-terraform apply -target=aws_ecr_repository.lambda
-
-# 3. Buildar e publicar a imagem (usa a URL que o passo 2 criou)
-REPO_URL=$(terraform output -raw ecr_repository_url)
-../docker/build_and_push.sh "$REPO_URL" latest
-
-# 4. Agora sim, aplicar o resto (Lambdas, Scheduler, etc.) apontando pra essa imagem
-terraform plan
-terraform apply
+make bootstrap
 ```
 
-Em deploys **seguintes** (a imagem já existe, só o código mudou): rode o
-passo 3 de novo com uma tag nova (ex: um hash do commit) e depois
-`terraform apply -var="image_tag=<tag-nova>"`.
+Um comando. Ele faz, nesta ordem:
+
+| Passo | O quê | Por que nessa ordem |
+|---|---|---|
+| 1 | `terraform init` | baixa os providers |
+| 2 | aplica **só** `aws_ecr_repository` | a Lambda só aceita ser criada apontando pra uma tag que **já existe** no ECR — e é o próprio Terraform que cria o ECR |
+| 3 | builda e publica a imagem | agora o repositório existe |
+| 4 | aplica o resto | as 7 funções encontram a imagem |
+| 5 | `dbt deps` + `dbt build` | as views e tabelas da camada dimensional **não** são do Terraform |
+
+O passo 5 existe porque o modelo dimensional é construído por dbt, não por
+Terraform. Sem ele a infraestrutura sobe, mas o banco `..._gold` fica com os
+bancos criados e nenhuma tabela dentro.
+
+Os agendamentos sobem **desligados**. `make tf-ligar` ativa.
+
+### Destruindo
+
+```bash
+make tf-destroy   # pede confirmação por escrito
+```
+
+**Dois passos internamente, e isso não é capricho.** O `force_destroy` do
+bucket e o `force_delete` do ECR são rastreados no **estado**, não só na
+configuração — então `terraform destroy -var 'permitir_destruir_dados=true'`
+sozinho **não funciona**: o destroy lê o valor que está no estado. Verificado:
+um `plan` com esse `-var` acusa `force_destroy = false -> true`, provando que
+é mudança de estado.
+
+Por isso o alvo aplica a flag primeiro (com `-target`, só nos dois recursos) e
+só então destrói. Sem isso o destroy para em `BucketNotEmpty`.
+
+A proteção fica **desligada por padrão** (`permitir_destruir_dados = false`):
+no dia a dia, um destroy acidental falha em vez de levar os dados junto.
+
+### Depois disso
+
+```bash
+make deploy
+```
+
+Uma linha. Ela faz, **nesta ordem**:
+
+| Passo | O que faz |
+|---|---|
+| `publish` | builda a imagem e publica no ECR |
+| `tf-plan` | mostra o que mudaria e salva o plano |
+| `tf-apply` | aplica **o plano salvo** |
+| `refresh` | faz as 7 funções adotarem a imagem recém-publicada |
+
+A ordem não é arbitrária: a imagem precisa existir antes do `apply`.
+
+**Por que `tf-apply` exige um plano salvo:** aplicar às cegas é como se
+descobre, em produção, que o plano destruía um recurso. O alvo recusa rodar
+sem um `plano.tfplan` gerado por `make tf-plan`, para que a saída seja sempre
+lida antes. O arquivo é apagado depois do apply e está no `.gitignore` — ele
+carrega os valores das variáveis, token incluído.
+
+**Por que existe o passo `refresh`:** a Lambda resolve a *tag* para um
+*digest* no momento em que o código é atualizado, e guarda o digest. Como a
+string `image_uri` continua sendo `...:latest` depois de um push, o
+`terraform plan` não acusa diferença — e as funções seguem rodando a imagem
+velha.
+
+Isso aconteceu de verdade aqui: depois de dois pushes no mesmo dia, a
+`heartbeat` ainda servia uma imagem de 18 dias antes, porque nada no bloco
+Terraform dela havia mudado. Pior: as funções que o Terraform tocou por outro
+motivo pegaram a imagem nova e as intocadas não — o mesmo deploy em dois
+estados. A correção definitiva é tag imutável por SHA do commit, que torna o
+`refresh` desnecessário. Enquanto a tag for `latest`, ele é obrigatório.
+
+### Ligar, desligar, destruir
+
+```bash
+make tf-ligar      # passa a coletar sozinho (e a gerar custo)
+make tf-desligar   # para de disparar; os recursos continuam existindo
+make status        # os pipelines estão entregando?
+make tf-destroy    # apaga tudo, inclusive os dados no S3 (pede confirmação)
+```
 
 ## O que é criado
 
@@ -98,11 +166,11 @@ passo 3 de novo com uma tag nova (ex: um hash do commit) e depois
 
 | Recurso | Qtd | Observação |
 |---|---|---|
-| `aws_s3_bucket` | 1 | Guarda bronze **e** silver, separados por prefixo. Versionamento e criptografia ligados, acesso público bloqueado |
+| `aws_s3_bucket` | 2 | O de dados guarda bronze, silver e gold separados por prefixo; o de auditoria guarda o CloudTrail. Ambos com criptografia em repouso e bloqueio de acesso público; sem versionamento |
 | `aws_ecr_repository` | 1 | A imagem compartilhada pelas 7 funções; lifecycle mantém as 10 tags mais recentes |
 | `aws_lambda_function` | 7 | 5 de ingestão + `silver` + `heartbeat` — `package_type = "Image"`, mesma imagem, `command` diferente em cada |
-| `aws_scheduler_schedule` | 6 | 5 de ingestão + o heartbeat de hora em hora. A `silver` não tem: dispara por evento do S3 |
-| `aws_s3_bucket_notification` | 1 | bronze → silver, filtrado por prefixo `bronze/` e sufixo `.ndjson` (sem os dois, laço infinito) |
+| `aws_sfn_state_machine` | 1 | Fluxo genérico de coleta: fan-out nas fontes, fan-in na silver |
+| `aws_scheduler_schedule` | 3 | posições, cadastro e o heartbeat de hora em hora. Os dois primeiros disparam o mesmo fluxo, mudando só a lista de fontes |
 | `aws_cloudwatch_metric_alarm` | 15 | Erro (7), dado velho (5), qualidade do dado (3) |
 | `aws_cloudwatch_log_metric_filter` | 8 | Transformam o log JSON em métrica |
 | `aws_cloudwatch_dashboard` | 1 | Painel único |
@@ -125,13 +193,11 @@ tráfego recorrente contra API de terceiro deve ser uma escolha explícita.
 ### Ligar
 
 ```bash
-cd infra/terraform
-terraform plan  -var 'agendamento_habilitado=true' -out=ligar.tfplan   # confira: deve ser 5 in-place, 0 destroy
-terraform apply ligar.tfplan
+make tf-ligar
 ```
 
-Para desligar, o mesmo com `agendamento_habilitado=false`. Os recursos continuam
-existindo — só param de disparar.
+Para desligar, `make tf-desligar`. Os recursos continuam existindo — só param
+de disparar.
 
 ### Verificar
 
@@ -223,6 +289,83 @@ entregou 8.047, 7.657 e 5.049 veículos em coletas reais; Rio, 1.962 e 3.488.
 Pisos em 200 e 50, frouxos de propósito: alarme de volume que grita por
 variação normal vira ruído e para de ser lido.
 
+### Segurança
+
+### O que o Terraform protege
+
+| Proteção | Onde |
+|---|---|
+| Bloqueio de acesso público ao S3 **na conta** | `seguranca.tf` |
+| Criptografia de disco por padrão | `seguranca.tf` |
+| Política negando requisição sem TLS nos dois buckets | `seguranca.tf` |
+| CloudTrail multi-região, com validação de integridade | `seguranca.tf` |
+| Orçamento com alerta em US$ 10, 25 e previsão | `seguranca.tf` |
+| Metabase escutando só em `127.0.0.1` | `metabase.tf` |
+| IMDSv2 obrigatório na EC2 | `metabase.tf` |
+| Acesso à instância por Session Manager, sem SSH nem porta | `metabase.tf` |
+| Papel IAM separado por função | cada arquivo |
+
+O bloqueio no nível da **conta** é o de maior retorno: qualquer bucket criado
+depois — por um colega, por um tutorial, por engano — já nasce fechado.
+Vazamento de S3 é a falha mais comum em conta AWS.
+
+### O que só você pode fazer, no console
+
+Duas coisas que o Terraform não alcança, e são as mais importantes que restam:
+
+**1. MFA no usuário IAM.** O `usuario_padrao` tem `AdministratorAccess` e
+**não tem MFA**. Uma chave vazada hoje dá controle total da conta, sem
+segundo fator. IAM → Users → Security credentials → Assign MFA device.
+
+**2. Rotação da chave de acesso.** A chave em uso tem mais de 48 dias e é a
+mesma que está em `~/.aws/credentials` e no Metabase local. Criar uma nova,
+trocar, e desativar a antiga leva dois minutos.
+
+O ideal seria não ter chave de longa duração para um usuário admin — usar
+IAM Identity Center com credencial temporária. Mas isso muda o fluxo de
+trabalho, então fica como recomendação, não como pendência.
+
+### O que ficou de fora, e por quê
+
+**GuardDuty** (~US$ 1–3/mês nesta escala) é o melhor controle de *detecção*
+que falta: identifica credencial usada de local improvável, mineração, acesso
+anômalo ao S3. Não foi habilitado porque custa, e custo é decisão sua.
+
+**A trilha do CloudTrail mora dentro do projeto**, então o `make tf-destroy`
+a apaga junto. Numa conta de verdade ela ficaria em conta separada, fora do
+alcance de quem opera o ambiente. Fica assim para não quebrar o ciclo de
+teste de destroy/apply.
+
+## Retenção e o custo de coletar de minuto a minuto
+
+Medido: cada coleta de posições das duas praças grava **4,15 MB** (2,7 MB de
+SP + 1,1 MB do Rio no bronze, mais 0,3 MB de silver). Na janela de 8h–16h59,
+de segunda a sexta, isso dá ~11.700 coletas/mês, ou **~48 GB/mês de
+armazenamento novo**.
+
+O problema não é o mês 1 (~US$ 1,09), é o acúmulo: sem retenção, chegaria a
+**~US$ 13/mês no mês 12** e continuaria subindo.
+
+Por isso o `bronze` de **posições** expira em **30 dias**:
+
+| Regra | Prefixo | Ação |
+|---|---|---|
+| `bronze-para-infrequent-access` | `bronze/` | → STANDARD_IA em 90 dias |
+| `expirar-bronze-posicoes-sp` / `-rio` | `bronze/praca=*/entidade=posicoes/` | expira em 30 dias |
+| `expirar-resultados-athena` | `athena-results/` | expira em 7 dias |
+
+**Por que só as posições:** a silver é 93% menor, guarda o mesmo dado já
+normalizado, e é o que as consultas usam — o bronze aqui é cópia de auditoria
+da resposta crua da API. Linhas e pontos não entram: são pequenos e coletados
+1x/dia.
+
+São duas regras e não uma porque o filtro do S3 aceita prefixo literal, sem
+curinga, e a praça vem antes da entidade no caminho.
+
+A Lambda fica em ~129 mil GB-s dos 400 mil gratuitos do free tier
+permanente — folga confortável. Na janela anterior (5h–23h, todo dia) eram
+~356 mil, perto demais do limite.
+
 ### Receber os alarmes por e-mail
 
 ```hcl
@@ -260,15 +403,18 @@ descartados, e um widget de log com os últimos WARNING e ERROR das 6 funções.
 ## Testar localmente antes de publicar
 
 ```bash
-../docker/run_local.sh lambdas.rio_posicoes.handler.lambda_handler
+make docker-run FONTE=rio_posicoes
 # noutro terminal:
 curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" -d '{}'
 ```
 
-Isso usa o Runtime Interface Emulator que já vem na imagem base da AWS —
-não precisa instalar nada além do Docker. Detalhes de como apontar pra um
-S3 de mentira (MinIO) em vez da AWS real estão comentados dentro do
-`run_local.sh`.
+Isso usa o Runtime Interface Emulator que já vem na imagem base da AWS — não
+precisa instalar nada além do Docker.
+
+As fontes válidas são `sp_posicoes`, `rio_posicoes`, `sp_cadastro`,
+`rio_cadastro` e `fortaleza_cadastro`. Não há um handler por fonte: todas
+usam `lambdas.ingestao.handler`, e a variável `FONTE` escolhe qual coletar —
+exatamente como na AWS.
 
 ## Destruir
 
