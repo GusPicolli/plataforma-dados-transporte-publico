@@ -1,36 +1,34 @@
 locals {
-  # module.function_name => (memoria, timeout, precisa_token, entidade)
+  # As 5 funcoes de ingestao. Todas rodam a MESMA imagem e o MESMO handler
+  # (lambdas/ingestao/handler.py) -- o que diferencia uma da outra e a
+  # variavel de ambiente FONTE, que seleciona a entrada correspondente em
+  # lambdas/ingestao/fontes.py.
   funcoes = {
     sp_posicoes = {
-      handler       = "lambdas.sp_posicoes.handler.lambda_handler"
       memoria       = var.lambda_memory_mb.posicoes
       timeout       = var.lambda_timeout_segundos.posicoes
       precisa_token = true
       agenda        = var.agenda_posicoes
     }
     sp_cadastro = {
-      handler       = "lambdas.sp_cadastro.handler.lambda_handler"
       memoria       = var.lambda_memory_mb.cadastro
       timeout       = var.lambda_timeout_segundos.cadastro_sp_rio
       precisa_token = true
       agenda        = var.agenda_cadastro
     }
     rio_posicoes = {
-      handler       = "lambdas.rio_posicoes.handler.lambda_handler"
       memoria       = var.lambda_memory_mb.posicoes
       timeout       = var.lambda_timeout_segundos.posicoes
       precisa_token = false
       agenda        = var.agenda_posicoes
     }
     rio_cadastro = {
-      handler       = "lambdas.rio_cadastro.handler.lambda_handler"
       memoria       = var.lambda_memory_mb.cadastro
       timeout       = var.lambda_timeout_segundos.cadastro_sp_rio
       precisa_token = false
       agenda        = var.agenda_cadastro
     }
     fortaleza_cadastro = {
-      handler       = "lambdas.fortaleza_cadastro.handler.lambda_handler"
       memoria       = var.lambda_memory_mb.cadastro
       timeout       = var.lambda_timeout_segundos.cadastro_fortaleza
       precisa_token = false
@@ -54,20 +52,24 @@ resource "aws_lambda_function" "funcoes" {
   memory_size   = each.value.memoria
   timeout       = each.value.timeout
 
-  # Imagem de container em vez de zip+layer -- as 5 funcoes compartilham a
-  # MESMA imagem (infra/docker/Dockerfile), so o "command" muda entre elas.
-  # A imagem precisa existir no ECR com essa tag antes do apply; ver
-  # "deploy em 2 fases" no README.
+  # Imagem de container em vez de zip+layer -- as 7 funcoes do projeto
+  # compartilham a MESMA imagem (infra/docker/Dockerfile). A imagem precisa
+  # existir no ECR com essa tag antes do apply; ver "deploy em 2 fases" no
+  # README.
   package_type = "Image"
   image_uri    = "${aws_ecr_repository.lambda.repository_url}:${var.image_tag}"
 
+  # Mesmo handler nas 5: o que muda e a variavel FONTE abaixo.
   image_config {
-    command = [each.value.handler]
+    command = ["lambdas.ingestao.handler.lambda_handler"]
   }
 
   environment {
     variables = merge(
-      { BUCKET_NAME = aws_s3_bucket.dados.bucket },
+      {
+        BUCKET_NAME = aws_s3_bucket.dados.bucket
+        FONTE       = each.key
+      },
       each.value.precisa_token ? { SPTRANS_TOKEN_PARAM = aws_ssm_parameter.sptrans_token.name } : {}
     )
   }
