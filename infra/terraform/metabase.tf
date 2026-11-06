@@ -294,6 +294,21 @@ resource "aws_ec2_instance_state" "metabase" {
 }
 
 output "metabase_url" {
-  description = "Endereco do Metabase enquanto a instancia estiver ligada."
-  value       = var.metabase_ligado ? "http://${aws_instance.metabase.public_ip}:3000" : "(desligado -- make metabase-aws-ligar)"
+  description = <<-TEXTO
+    Como chegar no Metabase.
+
+    NAO e o IP publico da instancia: o container escuta em 127.0.0.1 e o
+    security group nao tem regra de entrada. O endereco so existe depois de
+    abrir um tunel -- por isso o valor aponta pra localhost.
+  TEXTO
+
+  value = var.metabase_ligado ? "http://localhost:3000  (abra o tunel antes: make metabase-aws-tunel)" : "(desligado -- make metabase-aws-ligar)"
+}
+
+# O ID serve pro tunel SSM e pros alvos de diagnostico. O IP publico NAO e
+# exposto como output de proposito: ele nao leva a lugar nenhum, e publicar
+# um endereco que nao responde foi o que gerou confusao antes.
+output "metabase_instance_id" {
+  description = "ID da instancia, usado pelo tunel SSM e pelos alvos de log."
+  value       = aws_instance.metabase.id
 }

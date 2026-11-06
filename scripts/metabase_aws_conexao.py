@@ -24,6 +24,9 @@ def main():
         sys.exit(1)
 
     print(f"\n  Metabase:  {url}\n")
+    print("O IP publico da instancia NAO atende: o Metabase escuta so em")
+    print("127.0.0.1, e nenhuma porta esta aberta. Abra o tunel num outro")
+    print("terminal com 'make metabase-aws-tunel' e so entao use o endereco.\n")
     print("Admin > Databases > Add database > Amazon Athena\n")
     print(f"  Region                          us-east-1")
     print(f"  Workgroup                       {_saida('athena_workgroup')}")

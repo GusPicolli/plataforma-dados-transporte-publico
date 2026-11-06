@@ -5,13 +5,39 @@ ifeq ($(OS),Windows_NT)
 	VENV_BIN := .venv/Scripts
 endif
 PY := $(VENV_BIN)/python
+
+# As receitas abaixo sao POSIX: usam test, rm, ||, pipes. Rodando fora do Git
+# Bash o make cai no cmd.exe, que nao entende nada disso, e o erro que aparece
+# e "CreateProcess(NULL, rm -f ...) failed" -- que nao diz a causa.
+#
+# O Git pra Windows ja traz um sh completo, e quem clona este repo tem git.
+# Apontar o SHELL pra ele faz todo alvo rodar igual no PowerShell, no cmd e no
+# Git Bash. O caminho curto (PROGRA~1) evita o espaco em "Program Files", que
+# o make nao sabe escapar em SHELL.
+ifeq ($(OS),Windows_NT)
+  SH_POSIX := $(firstword $(wildcard C:/PROGRA~1/Git/usr/bin/sh.exe)                           $(wildcard C:/PROGRA~2/Git/usr/bin/sh.exe)                           $(wildcard C:/PROGRA~1/Git/bin/sh.exe))
+  ifeq ($(SH_POSIX),)
+    $(error Nao achei o sh do Git para Windows. Instale o Git for Windows             (https://git-scm.com/download/win) ou rode o make pelo Git Bash.)
+  endif
+  SHELL := $(SH_POSIX)
+  .SHELLFLAGS := -c
+endif
 PIP := $(VENV_BIN)/pip
 
 .DEFAULT_GOAL := help
 
-.PHONY: help setup check status metabase-aws-ligar metabase-aws-desligar metabase-aws-conexao metabase-aws-shell metabase-aws-atualizar metabase-aws-logs bootstrap query query-gold dbt-deps dbt-build dbt-test dbt-docs metabase metabase-stop metabase-limpar demo deploy publish refresh \n	tf-init tf-plan tf-apply tf-ligar tf-desligar tf-destroy venv install run run-sptrans run-rio run-fortaleza run-all clean \
-	realtime-redis realtime-producer-sp realtime-producer-rio realtime-consumer realtime-api \
-	docker-build docker-run
+.PHONY: bootstrap check clean dbt-build 
+	dbt-deps dbt-docs dbt-test demo 
+	deploy docker-build docker-run help 
+	install metabase metabase-aws-atualizar metabase-aws-conexao 
+	metabase-aws-desligar metabase-aws-ligar metabase-aws-logs metabase-aws-shell 
+	metabase-aws-tunel metabase-limpar metabase-stop publish 
+	query query-gold realtime-api realtime-consumer 
+	realtime-producer-rio realtime-producer-sp realtime-redis refresh 
+	run run-all run-fortaleza run-rio 
+	run-sptrans setup status tf-apply 
+	tf-desligar tf-destroy tf-init tf-ligar 
+	tf-plan venv
 
 help:  ## Mostra esta lista
 	@echo "Primeira vez no projeto? Rode nesta ordem:"
