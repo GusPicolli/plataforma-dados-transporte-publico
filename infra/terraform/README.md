@@ -64,33 +64,96 @@ Servem de aviso para quem for mexer:
 2. Docker Desktop (ou equivalente) rodando — pra build/push da imagem e pra testar local.
 3. AWS CLI configurado (`aws configure`) com permissão pra ECR, Lambda, S3, IAM, SSM e EventBridge Scheduler.
 
-## Deploy (2 fases — é assim mesmo, não é engano)
+## Deploy
 
-O Lambda só aceita ser criado apontando pra uma tag que **já existe** no
-ECR. Como o Terraform também é quem cria o repositório ECR, dá pra criar
-tudo de uma vez só na primeira vez:
+### Do zero (ou depois de um destroy)
 
 ```bash
-# 1. Configurar variaveis
-cp terraform.tfvars.example terraform.tfvars
-# edite terraform.tfvars com o SPTRANS_TOKEN real -- nunca commitar esse arquivo
+cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+# edite e coloque o SPTRANS_TOKEN real -- esse arquivo nunca vai pro git
 
-# 2. Criar so o repositorio ECR primeiro
-terraform init
-terraform apply -target=aws_ecr_repository.lambda
-
-# 3. Buildar e publicar a imagem (usa a URL que o passo 2 criou)
-REPO_URL=$(terraform output -raw ecr_repository_url)
-../docker/build_and_push.sh "$REPO_URL" latest
-
-# 4. Agora sim, aplicar o resto (Lambdas, Scheduler, etc.) apontando pra essa imagem
-terraform plan
-terraform apply
+make bootstrap
 ```
 
-Em deploys **seguintes** (a imagem já existe, só o código mudou): rode o
-passo 3 de novo com uma tag nova (ex: um hash do commit) e depois
-`terraform apply -var="image_tag=<tag-nova>"`.
+Um comando. Ele faz, nesta ordem:
+
+| Passo | O quê | Por que nessa ordem |
+|---|---|---|
+| 1 | `terraform init` | baixa os providers |
+| 2 | aplica **só** `aws_ecr_repository` | a Lambda só aceita ser criada apontando pra uma tag que **já existe** no ECR — e é o próprio Terraform que cria o ECR |
+| 3 | builda e publica a imagem | agora o repositório existe |
+| 4 | aplica o resto | as 7 funções encontram a imagem |
+| 5 | `dbt deps` + `dbt build` | as views e tabelas da camada dimensional **não** são do Terraform |
+
+O passo 5 existe porque o modelo dimensional é construído por dbt, não por
+Terraform. Sem ele a infraestrutura sobe, mas o banco `..._gold` fica com os
+bancos criados e nenhuma tabela dentro.
+
+Os agendamentos sobem **desligados**. `make tf-ligar` ativa.
+
+### Destruindo
+
+```bash
+make tf-destroy   # pede confirmação por escrito
+```
+
+**Dois passos internamente, e isso não é capricho.** O `force_destroy` do
+bucket e o `force_delete` do ECR são rastreados no **estado**, não só na
+configuração — então `terraform destroy -var 'permitir_destruir_dados=true'`
+sozinho **não funciona**: o destroy lê o valor que está no estado. Verificado:
+um `plan` com esse `-var` acusa `force_destroy = false -> true`, provando que
+é mudança de estado.
+
+Por isso o alvo aplica a flag primeiro (com `-target`, só nos dois recursos) e
+só então destrói. Sem isso o destroy para em `BucketNotEmpty`.
+
+A proteção fica **desligada por padrão** (`permitir_destruir_dados = false`):
+no dia a dia, um destroy acidental falha em vez de levar os dados junto.
+
+### Depois disso
+
+```bash
+make deploy
+```
+
+Uma linha. Ela faz, **nesta ordem**:
+
+| Passo | O que faz |
+|---|---|
+| `publish` | builda a imagem e publica no ECR |
+| `tf-plan` | mostra o que mudaria e salva o plano |
+| `tf-apply` | aplica **o plano salvo** |
+| `refresh` | faz as 7 funções adotarem a imagem recém-publicada |
+
+A ordem não é arbitrária: a imagem precisa existir antes do `apply`.
+
+**Por que `tf-apply` exige um plano salvo:** aplicar às cegas é como se
+descobre, em produção, que o plano destruía um recurso. O alvo recusa rodar
+sem um `plano.tfplan` gerado por `make tf-plan`, para que a saída seja sempre
+lida antes. O arquivo é apagado depois do apply e está no `.gitignore` — ele
+carrega os valores das variáveis, token incluído.
+
+**Por que existe o passo `refresh`:** a Lambda resolve a *tag* para um
+*digest* no momento em que o código é atualizado, e guarda o digest. Como a
+string `image_uri` continua sendo `...:latest` depois de um push, o
+`terraform plan` não acusa diferença — e as funções seguem rodando a imagem
+velha.
+
+Isso aconteceu de verdade aqui: depois de dois pushes no mesmo dia, a
+`heartbeat` ainda servia uma imagem de 18 dias antes, porque nada no bloco
+Terraform dela havia mudado. Pior: as funções que o Terraform tocou por outro
+motivo pegaram a imagem nova e as intocadas não — o mesmo deploy em dois
+estados. A correção definitiva é tag imutável por SHA do commit, que torna o
+`refresh` desnecessário. Enquanto a tag for `latest`, ele é obrigatório.
+
+### Ligar, desligar, destruir
+
+```bash
+make tf-ligar      # passa a coletar sozinho (e a gerar custo)
+make tf-desligar   # para de disparar; os recursos continuam existindo
+make status        # os pipelines estão entregando?
+make tf-destroy    # apaga tudo, inclusive os dados no S3 (pede confirmação)
+```
 
 ## O que é criado
 
@@ -98,7 +161,7 @@ passo 3 de novo com uma tag nova (ex: um hash do commit) e depois
 
 | Recurso | Qtd | Observação |
 |---|---|---|
-| `aws_s3_bucket` | 1 | Guarda bronze **e** silver, separados por prefixo. Versionamento e criptografia ligados, acesso público bloqueado |
+| `aws_s3_bucket` | 1 | Guarda bronze **e** silver, separados por prefixo. Criptografia em repouso e bloqueio de acesso público ligados; sem versionamento |
 | `aws_ecr_repository` | 1 | A imagem compartilhada pelas 7 funções; lifecycle mantém as 10 tags mais recentes |
 | `aws_lambda_function` | 7 | 5 de ingestão + `silver` + `heartbeat` — `package_type = "Image"`, mesma imagem, `command` diferente em cada |
 | `aws_scheduler_schedule` | 6 | 5 de ingestão + o heartbeat de hora em hora. A `silver` não tem: dispara por evento do S3 |
@@ -125,13 +188,11 @@ tráfego recorrente contra API de terceiro deve ser uma escolha explícita.
 ### Ligar
 
 ```bash
-cd infra/terraform
-terraform plan  -var 'agendamento_habilitado=true' -out=ligar.tfplan   # confira: deve ser 5 in-place, 0 destroy
-terraform apply ligar.tfplan
+make tf-ligar
 ```
 
-Para desligar, o mesmo com `agendamento_habilitado=false`. Os recursos continuam
-existindo — só param de disparar.
+Para desligar, `make tf-desligar`. Os recursos continuam existindo — só param
+de disparar.
 
 ### Verificar
 
@@ -222,6 +283,36 @@ esperamos" — são o ponto abaixo do qual só pode ser fonte vazia. Medido: SP
 entregou 8.047, 7.657 e 5.049 veículos em coletas reais; Rio, 1.962 e 3.488.
 Pisos em 200 e 50, frouxos de propósito: alarme de volume que grita por
 variação normal vira ruído e para de ser lido.
+
+### Retenção e o custo de coletar de minuto a minuto
+
+Medido: cada coleta de posições das duas praças grava **4,15 MB** (2,7 MB de
+SP + 1,1 MB do Rio no bronze, mais 0,3 MB de silver). Na janela de 8h–16h59,
+de segunda a sexta, isso dá ~11.700 coletas/mês, ou **~48 GB/mês de
+armazenamento novo**.
+
+O problema não é o mês 1 (~US$ 1,09), é o acúmulo: sem retenção, chegaria a
+**~US$ 13/mês no mês 12** e continuaria subindo.
+
+Por isso o `bronze` de **posições** expira em **30 dias**:
+
+| Regra | Prefixo | Ação |
+|---|---|---|
+| `bronze-para-infrequent-access` | `bronze/` | → STANDARD_IA em 90 dias |
+| `expirar-bronze-posicoes-sp` / `-rio` | `bronze/praca=*/entidade=posicoes/` | expira em 30 dias |
+| `expirar-resultados-athena` | `athena-results/` | expira em 7 dias |
+
+**Por que só as posições:** a silver é 93% menor, guarda o mesmo dado já
+normalizado, e é o que as consultas usam — o bronze aqui é cópia de auditoria
+da resposta crua da API. Linhas e pontos não entram: são pequenos e coletados
+1x/dia.
+
+São duas regras e não uma porque o filtro do S3 aceita prefixo literal, sem
+curinga, e a praça vem antes da entidade no caminho.
+
+A Lambda fica em ~129 mil GB-s dos 400 mil gratuitos do free tier
+permanente — folga confortável. Na janela anterior (5h–23h, todo dia) eram
+~356 mil, perto demais do limite.
 
 ### Receber os alarmes por e-mail
 
