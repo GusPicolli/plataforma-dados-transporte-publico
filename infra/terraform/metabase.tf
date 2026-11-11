@@ -141,6 +141,20 @@ resource "aws_iam_role_policy" "metabase" {
           "athena:ListWorkGroups",
           "athena:ListDataCatalogs",
           "athena:GetDataCatalog",
+
+          # LISTAR o que existe, que e diferente de CONSULTAR.
+          #
+          # Sem estas quatro, o Metabase conecta, roda SQL nativo e devolve
+          # resultado -- mas mostra ZERO TABELA na interface, porque o driver
+          # descobre tabela pelas APIs de metadado do Athena, e nao pelo Glue.
+          # A falha e silenciosa: a sincronizacao responde "ok" e nao acha
+          # nada.
+          #
+          # Ter glue:GetTables nao substitui: sao caminhos diferentes.
+          "athena:ListDatabases",
+          "athena:GetDatabase",
+          "athena:ListTableMetadata",
+          "athena:GetTableMetadata",
         ]
         Resource = "*"
       },
