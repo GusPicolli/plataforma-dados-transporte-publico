@@ -201,6 +201,24 @@ O tráfego sai cifrado pela API da AWS, é autorizado por IAM e fica
 registrado no CloudTrail. **Nenhuma porta é aberta.** É mais seguro que SSH
 e não depende de qual é o seu IP hoje.
 
+Credenciais de administrador:
+
+| | |
+|---|---|
+| **E-mail** | `aws@onibus.dev` |
+| **Senha** | `OnibusAWS#2026` |
+
+São diferentes das do Metabase local (`local@onibus.dev` /
+`OnibusLocal#2026`, em `scripts/metabase.py`) — as duas instalações têm
+bancos de metadados separados, e uma senha não serve na outra.
+
+> **Troque esta senha antes de expor o Metabase.** Hoje ela não basta para
+> entrar: a instância não tem endereço público e chegar nela exige
+> credencial AWS com permissão de SSM. Essa proteção desaparece no momento
+> em que o Cloudflare Tunnel for ligado — aí a senha passa a ser a única
+> barreira, e ela está num repositório público. Trocar leva um minuto:
+> *Admin → People → Reset password*.
+
 Exige o `session-manager-plugin` instalado e no PATH — veja
 [Instalando o session-manager-plugin](#instalando-o-session-manager-plugin).
 

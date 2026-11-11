@@ -171,6 +171,10 @@ Repare que a instância **não tem chave SSH** e usa um *instance profile*: a
 credencial da AWS é temporária e rotacionada sozinha, e nenhuma chave de
 acesso é digitada ou guardada.
 
+O usuário e a senha de administrador **do Metabase** (que são outra coisa, e
+diferentes dos do Metabase local) estão em
+[`CONSULTAS.md`](CONSULTAS.md#1-túnel-ssm--para-você-mesmo).
+
 ### 8. Segurança da conta
 
 | Onde olhar | O que deve estar lá |
